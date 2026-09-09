@@ -3,6 +3,7 @@
 # kept deliberate: this gem loads what it needs, in order
 
 require_relative "lock/version"
+require_relative "lock/error"
 
 module Agent
   # Advisory locks for the several coding agents that end up in one checkout.
@@ -11,7 +12,6 @@ module Agent
   # the CLI does is a method on Manager, which prints nothing and exits
   # nothing, so the whole lifecycle is testable without capturing output.
   module Lock
-    class Error < StandardError; end
   end
 end
 

@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "dry/cli"
+require_relative "../../manager"
+
 require "json"
 
 module Agent

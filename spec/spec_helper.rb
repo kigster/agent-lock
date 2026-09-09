@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "agent/lock"
+require "open3"
+require "rbconfig"
 require "rspec/its"
 
 Dir[File.join(__dir__, "support", "**", "*.rb")].each { |file| require file }

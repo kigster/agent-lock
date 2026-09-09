@@ -1,8 +1,12 @@
 # frozen_string_literal: true
 
+require_relative "process_info"
+require_relative "scope"
+
 require "yaml"
 require "time"
 require "digest"
+require "socket"
 
 module Agent
   module Lock

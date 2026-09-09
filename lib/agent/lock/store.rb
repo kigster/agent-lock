@@ -1,5 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "error"
+require_relative "store/file_system"
+require_relative "store/redis"
+
+require "fileutils"
+
 module Agent
   module Lock
     # Where locks are kept. One tree, one store, chosen on purpose.

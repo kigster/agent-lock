@@ -1,5 +1,12 @@
 # frozen_string_literal: true
 
+require_relative "freeze"
+require_relative "identity"
+require_relative "record"
+require_relative "scope"
+require_relative "store"
+require_relative "tree"
+
 module Agent
   module Lock
     # Every decision this gem makes, with nothing printed.
@@ -45,10 +52,11 @@ module Agent
         refusal = why_not(scope)
         return refusal if refusal
 
-        record = build(scope, intent: intent, enforce: enforce, force: force)
+        record = Record.build(scope: scope, tree: tree, identity: identity, intent: intent)
         return result(:held, conflicts(scope)) unless store.create(record)
+        return result(:acquired, [record]) unless enforce
 
-        result(:acquired, [record])
+        enforce_on(record, scope, force: force)
       end
 
       # @param path [String]
@@ -180,10 +188,33 @@ module Agent
           pid: evidence[:pid], started: evidence[:started], host: evidence[:host] }
       end
 
-      # @return [Record]
-      def build(scope, intent:, enforce:, force:)
-        record = Record.build(scope: scope, tree: tree, identity: identity, intent: intent)
-        enforce ? record.with(frozen_paths: freeze_for(scope, force: force)) : record
+      # Freezing happens after the claim is won, never before. Flagging files
+      # first and then losing the race would leave a tree full of unwritable
+      # files that no lock admits to having frozen, which is the one failure
+      # this whole feature is supposed to prevent.
+      #
+      # @param record [Record] the lock, already created
+      # @return [Result]
+      def enforce_on(record, scope, force:)
+        wanted = Freeze.matches(scope, tree)
+        frozen = Freeze.apply(wanted, tree: tree, force: force)
+        updated = record.with(frozen_paths: frozen)
+        store.update(updated)
+
+        result(:acquired, [updated], freeze_shortfall(wanted, frozen))
+      rescue Freeze::TooBroad
+        # The lock stands; the freeze does not. Undoing the claim here would
+        # be a second surprise on top of the first.
+        drop(record)
+        raise
+      end
+
+      # @return [String, nil] said only when the filesystem refused some of it
+      def freeze_shortfall(wanted, frozen)
+        missed = wanted.size - frozen.size
+        return nil if missed.zero?
+
+        "could not freeze #{missed} of #{wanted.size} file(s); the lock still stands"
       end
 
       # Orphaned locks are left out: they carry the notes of a session that
@@ -206,12 +237,6 @@ module Agent
       def drop(record)
         Freeze.clear(record.frozen_paths, tree: tree)
         store.delete(record)
-      end
-
-      def freeze_for(scope, force:)
-        raise Freeze::TooBroad, "--enforce needs macOS; this is #{RUBY_PLATFORM}" unless Freeze.supported?
-
-        Freeze.apply(Freeze.matches(scope, tree), tree: tree, force: force)
       end
 
       def result(status, records, message = nil) = Result.new(status:, records:, message:)

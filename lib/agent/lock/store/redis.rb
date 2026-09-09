@@ -1,5 +1,10 @@
 # frozen_string_literal: true
 
+require_relative "../error"
+require_relative "../record"
+
+require "digest"
+
 module Agent
   module Lock
     module Store
@@ -28,10 +33,14 @@ module Agent
         # @return [String]
         def describe = "redis #{url} (#{namespace})"
 
+        # SCAN rather than KEYS: this runs on whatever Redis the machine
+        # already has, which may be somebody's shared development instance,
+        # and KEYS blocks the server for the length of the scan.
+        #
         # @return [Array<Record>]
         def all
-          keys = client.keys("#{namespace}:*")
-          keys.sort.filter_map { |key| parse(client.get(key), key) }
+          keys = client.scan_each(match: "#{namespace}:*").to_a.uniq.sort
+          keys.filter_map { |key| parse(client.get(key), key) }
         end
 
         # @param scope [Scope]

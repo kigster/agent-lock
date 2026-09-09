@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "base"
+
 module Agent
   module Lock
     module CLI
@@ -39,7 +41,7 @@ module Agent
 
           def report(result)
             case result.status
-            when :acquired then report_acquired(result.record)
+            when :acquired then report_acquired(result)
             when :already_mine then say("ALREADY YOURS #{result.record.scope}")
             when :held
               warn_("REFUSED, do not write here")
@@ -48,9 +50,11 @@ module Agent
             end
           end
 
-          def report_acquired(record)
+          def report_acquired(result)
+            record = result.record
             say("ACQUIRED #{record.scope}  (holder: #{record.agent_id})")
             say("FROZEN   #{record.frozen_paths.size} file(s)") if record.frozen_paths.any?
+            warn_(result.message) if result.message
           end
 
           # An orphan is somebody's unfinished work, so the two ways out of it
