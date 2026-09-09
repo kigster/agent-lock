@@ -1,5 +1,7 @@
 # Agent::Lock
 
+[![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml)
+
 Agent Lock is a Ruby-gem based CLI `agent-lock` (short version: `alo`) 
 which is used by Coding Agents to ensure they don't step on each other's cables or something.
 
