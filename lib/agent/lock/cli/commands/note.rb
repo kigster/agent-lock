@@ -22,8 +22,8 @@ module Agent
 
             case result.status
             when :noted then say("NOTED #{result.record.scope}")
-            when :not_found then warn_("NOT LOCKED #{scope} — take the lock before writing in it")
-            when :refused then warn_("REFUSED — #{result.record.scope} is held by #{result.record.agent_id}")
+            when :not_found then warn_("NOT LOCKED #{scope}, take the lock before writing in it")
+            when :refused then warn_("REFUSED: #{result.record.scope} is held by #{result.record.agent_id}")
             end
 
             finish(result)

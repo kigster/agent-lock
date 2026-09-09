@@ -19,7 +19,7 @@ module Agent
             when :released then say("RELEASED #{result.record.scope}")
             when :not_found then say("NOT LOCKED #{scope}")
             when :refused
-              warn_("REFUSED — #{result.record.scope} is held by #{result.record.agent_id}, not you")
+              warn_("REFUSED: #{result.record.scope} is held by #{result.record.agent_id}, not you")
             end
 
             finish(result)

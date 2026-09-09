@@ -5,8 +5,8 @@ require "redis"
 # The Redis store is opt-in, so this runs only where a Redis is actually
 # reachable. It is the same contract the file store satisfies, asserted
 # against a real server rather than a double, because the two things this
-# backend exists for — an atomic SET NX and a TTL that expires an abandoned
-# lock — are exactly what a double would fake.
+# backend exists for, an atomic SET NX and a TTL that expires an abandoned
+# lock, are exactly what a double would fake.
 RSpec.describe Agent::Lock::Store::Redis, type: :checkout do
   subject(:store) { described_class.new(tree) }
 

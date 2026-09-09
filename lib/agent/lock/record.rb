@@ -137,7 +137,7 @@ module Agent
       end
 
       # Blocking answers "may I claim an overlapping scope": everything except
-      # my own lock and my parent's. The one that matters is the sibling — two
+      # my own lock and my parent's. The one that matters is the sibling: two
       # sub-agents of one session, let loose in the same tree, are exactly the
       # pair this gem exists to keep apart, and treating the whole family as
       # one holder would let them write over each other freely.

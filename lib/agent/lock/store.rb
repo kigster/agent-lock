@@ -6,7 +6,7 @@ module Agent
     #
     # The backend is never auto-detected. An agent that finds Redis running and
     # switches to it, while the agent beside it does not, gives two sessions two
-    # separate stores in which neither can see the other's locks — a lock that
+    # separate stores in which neither can see the other's locks, a lock that
     # is worse than no lock, because it reports success. So the choice comes
     # from AGENT_LOCK_BACKEND, and the first store created in a tree records
     # what it is, so a second process in that tree cannot silently pick the
@@ -25,7 +25,7 @@ module Agent
         established = recorded(tree)
 
         if established && established != wanted
-          raise Mismatch, "this tree's locks live in #{established}, not #{wanted} — " \
+          raise Mismatch, "this tree's locks live in #{established}, not #{wanted}, " \
                           "release them before switching backends"
         end
 
@@ -37,7 +37,7 @@ module Agent
         case name
         when "file" then FileSystem.new(tree)
         when "redis" then Redis.new(tree)
-        else raise Mismatch, "unknown backend #{name.inspect} — expected file or redis"
+        else raise Mismatch, "unknown backend #{name.inspect}, expected file or redis"
         end
       end
 

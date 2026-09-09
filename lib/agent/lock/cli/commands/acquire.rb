@@ -42,7 +42,7 @@ module Agent
             when :acquired then report_acquired(result.record)
             when :already_mine then say("ALREADY YOURS #{result.record.scope}")
             when :held
-              warn_("REFUSED — do not write here")
+              warn_("REFUSED, do not write here")
               report_held(result.records)
             when :interrupted then report_interrupted(result.record)
             end
