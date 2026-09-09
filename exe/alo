@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+# The short name, for the times you are typing it twenty times an hour.
 require "agent/lock"
 
 Agent::Lock::Launcher.new(ARGV).execute!

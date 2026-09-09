@@ -8,21 +8,20 @@ Gem::Specification.new do |spec|
   spec.authors = ["Konstantin Gredeskoul"]
   spec.email = ["kigster@gmail.com"]
 
-  spec.summary = "This gem provides the CLI that helps agent instances to lock resources such as folders, unlock, see who locked them."
-  spec.description = "Locking detection for Claude Code and other agents"
+  spec.summary = "Advisory locks for the several coding agents that end up in one checkout"
+  spec.description = "A CLI an agent runs before it writes: claim a path or a glob, see who holds one, " \
+                     "record progress inside the lock, and pick the work back up after a crash. Identity " \
+                     "belongs to the session rather than the process, so a lock taken by one command can be " \
+                     "released by the next."
   spec.homepage = "https://github.com/kigster/agent-lock"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2.0"
-  spec.metadata["allowed_push_host"] = "TODO: Set to your gem server 'https://example.com'"
+  spec.metadata["allowed_push_host"] = "https://rubygems.org"
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = "https://github.com/kigster/agent-lock"
   spec.metadata["changelog_uri"] = "https://github.com/kigster/agent-lock/blob/main/CHANGELOG.md"
 
-  # Uncomment the line below to require MFA for gem pushes.
-  # This helps protect your gem from supply chain attacks by ensuring
-  # no one can publish a new version without multi-factor authentication.
-  # See: https://guides.rubygems.org/mfa-requirement-opt-in/
-  # spec.metadata["rubygems_mfa_required"] = "true"
+  spec.metadata["rubygems_mfa_required"] = "true"
 
   # Specify which files should be added to the gem when it is released.
   # The `git ls-files -z` loads the files in the RubyGem that have been added into git.
