@@ -153,6 +153,46 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
       end
     end
   end
+
+  # `.plans`, `.github`, `.circleci` and the rest are ordinary places for an
+  # agent to work, and a scope named after one produces a lock file whose name
+  # also starts with a dot. `Dir.glob` skips those unless it is told not to,
+  # which used to leave the lock written, invisible, and enforcing nothing.
+  describe "a scope that starts with a dot" do
+    before { FileUtils.mkdir_p(File.join(checkout, ".plans", "037")) }
+
+    it "is visible to the session holding it" do
+      luke.acquire(".plans/**", intent: "writing the spec")
+
+      expect(luke.mine.records.map(&:scope)).to eq([".plans/**"])
+    end
+
+    it "refuses another session an overlapping scope inside it" do
+      luke.acquire(".plans/**", intent: "writing the spec")
+
+      result = rey.acquire(".plans/037/spec.md")
+
+      aggregate_failures do
+        expect(result.status).to eq(:held)
+        expect(result.record.agent_id).to eq("luke-backend")
+      end
+    end
+
+    it "answers #check like any other scope" do
+      luke.acquire(".plans/**")
+
+      expect(rey.check(".plans/037/spec.md").code).to eq(1)
+    end
+
+    it "goes away with #release_all" do
+      luke.acquire(".plans/**")
+
+      aggregate_failures do
+        expect(luke.release_all.records.size).to eq(1)
+        expect(rey.acquire(".plans/**").status).to eq(:acquired)
+      end
+    end
+  end
 end
 RSpec.describe "surviving a restart", type: :checkout do
   subject(:luke) { manager_for("luke-backend") }
