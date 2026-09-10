@@ -24,9 +24,17 @@ module Agent
         # @return [String] how a listing names this store
         def describe = dir
 
+        # FNM_DOTMATCH is load-bearing. A scope like `.plans/**` slugs to a
+        # filename that starts with a dot, and a plain glob skips it, so the
+        # lock was written, listed nowhere, and blocked nobody. Redis matches
+        # those keys either way, and a store that enumerates less than it holds
+        # is worse than no store at all.
+        #
         # @return [Array<Record>] every lock here, other worktrees included
         def all
-          Dir.glob(File.join(dir, "*#{SUFFIX}")).sort.filter_map { |path| Record.read(path) }
+          Dir.glob(File.join(dir, "*#{SUFFIX}"), File::FNM_DOTMATCH)
+             .sort
+             .filter_map { |path| Record.read(path) }
         end
 
         # @param scope [Scope]
