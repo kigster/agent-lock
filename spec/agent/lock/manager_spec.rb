@@ -41,14 +41,138 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
       expect(luke.acquire("workflow/**").status).to eq(:already_mine)
     end
 
-    # A sub-agent is not a second agent. It works inside its parent's claim,
-    # and refusing it would make parallel work impossible for the one harness
-    # that most needs it.
-    it "lets a sub-agent write inside its parent's lock" do
+    # A sub-agent works inside its parent's claim, and refusing it would make
+    # parallel work impossible for the one harness that most needs it. It
+    # still records a claim of its own, or its siblings could not see it.
+    it "lets a sub-agent claim inside its parent's lock" do
       luke.acquire("workflow/**")
       sub = manager_for("subagent-4f2a", parent: "luke-backend")
 
-      expect(sub.acquire("workflow/lib/cli.rb").status).to eq(:already_mine).or eq(:acquired)
+      expect(sub.acquire("workflow/lib/cli.rb").status).to eq(:acquired)
+    end
+
+    it "takes the store's mutex for the scan and the write, and freezes outside it" do
+      inside = false
+      frozen_inside = nil
+      allow(luke.store).to receive(:synchronize).and_wrap_original do |original, &block|
+        original.call do
+          inside = true
+          block.call
+        ensure
+          inside = false
+        end
+      end
+      allow(Agent::Lock::Freeze).to receive(:apply) do
+        frozen_inside = inside
+        []
+      end
+
+      result = luke.acquire("workflow/**", enforce: true)
+
+      aggregate_failures do
+        expect(result.status).to eq(:acquired)
+        expect(luke.store).to have_received(:synchronize).once
+        expect(frozen_inside).to be(false)
+      end
+    end
+  end
+
+  # The documented orchestration pattern: a parent claims an umbrella and
+  # fans out, each sub-agent claims its own corner inside it. Before this
+  # worked, a child's claim inside its parent's lock recorded nothing, so two
+  # siblings both "acquired" one file, and a child's release-all took its
+  # parent's umbrella with it.
+  describe "a family working in one tree" do
+    let(:orchestrator) { manager_for("orchestrator") }
+    let(:alpha) { manager_for("alpha", parent: "orchestrator") }
+    let(:beta) { manager_for("beta", parent: "orchestrator") }
+    let(:file) { "workflow/lib/cli.rb" }
+
+    before { orchestrator.acquire("workflow/**", intent: "fanning out") }
+
+    it "records a child's claim under the child's own name" do
+      result = alpha.acquire(file, intent: "the CLI")
+
+      aggregate_failures do
+        expect(result.status).to eq(:acquired)
+        expect(result.record.agent_id).to eq("alpha")
+        expect(result.record.parent_agent_id).to eq("orchestrator")
+      end
+    end
+
+    it "refuses a sibling the file its sibling claimed" do
+      alpha.acquire(file, intent: "the CLI")
+
+      result = beta.acquire(file)
+
+      aggregate_failures do
+        expect(result.status).to eq(:held)
+        expect(result.code).to eq(1)
+        expect(result.record.agent_id).to eq("alpha")
+      end
+    end
+
+    it "is re-entrant for the child's own claim" do
+      alpha.acquire(file)
+
+      expect(alpha.acquire(file).status).to eq(:already_mine)
+    end
+
+    # Records are keyed by tree and scope, so the child cannot hold a second
+    # record on the one its parent holds. Letting it through with nothing
+    # written down is the bug; refusing fails closed.
+    it "refuses a child its parent's exact scope, and names the parent" do
+      result = alpha.acquire("workflow/**")
+
+      aggregate_failures do
+        expect(result.status).to eq(:parent_scope)
+        expect(result.code).to eq(1)
+        expect(result.records.map(&:agent_id)).to eq(["orchestrator"])
+      end
+    end
+
+    it "leaves the parent's lock standing after a child's release-all" do
+      alpha.acquire(file)
+
+      aggregate_failures do
+        expect(alpha.release_all.records.map(&:agent_id)).to eq(["alpha"])
+        expect(orchestrator.mine.records.map(&:scope)).to eq(["workflow/**"])
+      end
+    end
+
+    it "does not count the parent's lock among the child's" do
+      aggregate_failures do
+        expect(alpha.mine.records).to be_empty
+        expect(alpha.release("workflow/**").status).to eq(:refused)
+        expect(alpha.note("workflow/**", "not mine to write in").status).to eq(:refused)
+      end
+    end
+
+    it "tells a child it is free to claim inside its parent's lock" do
+      expect(alpha.check(file).status).to eq(:free)
+    end
+
+    it "still lets the parent sweep up after its children" do
+      alpha.acquire(file)
+
+      expect(orchestrator.release_all.records.map(&:agent_id)).to contain_exactly("orchestrator", "alpha")
+    end
+
+    # What a Claude Code sub-agent actually has: its own AGENT_ID and the
+    # parent's process. No AGENT_PARENT_ID, since nothing sets one.
+    context "when the parent is the session's fingerprint and the children only name themselves" do
+      let(:orchestrator) { Agent::Lock::Manager.new(tree: tree, identity: Agent::Lock::Identity.new(env: {})) }
+      let(:alpha) { manager_for("alpha") }
+      let(:beta) { manager_for("beta") }
+
+      it "keeps the siblings apart all the same" do
+        aggregate_failures do
+          expect(alpha.acquire(file).status).to eq(:acquired)
+          expect(beta.acquire(file).status).to eq(:held)
+          expect(alpha.release_all.records.map(&:agent_id)).to eq(["alpha"])
+          expect(orchestrator.mine.records.map(&:scope)).to eq(["workflow/**"])
+        end
+      end
     end
   end
 

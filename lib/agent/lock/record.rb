@@ -129,16 +129,16 @@ module Agent
 
       # Two different questions, deliberately not one.
       #
-      # Ownership answers "may I release this, and does `mine` list it": yes
-      # for my own locks, my parent's, and my sub-agents'. A session cleaning
-      # up after itself has to be able to take its children's locks with it,
-      # or a crashed sub-agent's claim outlives everybody.
+      # Ownership answers "may I release this, write notes in it, and does
+      # `mine` list it": yes for my own locks and my sub-agents', never for my
+      # parent's. A session cleaning up after itself has to be able to take
+      # its children's locks with it, or a crashed sub-agent's claim outlives
+      # everybody. The reverse is how a child's `release-all` used to drop the
+      # umbrella its parent had just fanned out under.
       #
       # @param identity [Identity]
       # @return [Boolean]
-      def held_by?(identity)
-        mine?(identity) || ancestor_of?(identity) || descendant_of?(identity)
-      end
+      def held_by?(identity) = mine?(identity) || descendant_of?(identity)
 
       # Blocking answers "may I claim an overlapping scope": everything except
       # my own lock and my parent's. The one that matters is the sibling: two
@@ -172,6 +172,21 @@ module Agent
         return false if created_at.nil?
 
         Time.now.utc - Time.parse(created_at) > minutes * 60
+      rescue ArgumentError
+        false
+      end
+
+      # A claim still standing, whose holder has not touched it in longer than
+      # anybody should need. Reported, never acted on: the holder may be alive
+      # and simply slow, so breaking it is a decision somebody announces.
+      #
+      # @param minutes [Integer]
+      # @return [Boolean]
+      def stale?(minutes)
+        touched = updated_at || created_at
+        return false if orphaned? || touched.nil?
+
+        Time.now.utc - Time.parse(touched) > minutes * 60
       rescue ArgumentError
         false
       end
