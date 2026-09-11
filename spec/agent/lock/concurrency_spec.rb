@@ -21,11 +21,11 @@ RSpec.describe "claiming overlapping scopes at the same moment", type: :checkout
   # @yieldparam id [String]
   # @yieldreturn [Agent::Lock::Manager] built in the child, before the gate
   # @return [Hash{String => String}] each agent id and the status it got back
-  def race(claims, &build)
+  def race(claims, &)
     gate, opener = IO.pipe
     reports, reporter = IO.pipe
 
-    pids = claims.map { |id, path| claimant(id, path, gate:, reporter:, unused: [opener, reports], &build) }
+    pids = claims.map { |id, path| claimant(id, path, gate:, reporter:, unused: [opener, reports], &) }
 
     [gate, reporter, opener].each(&:close) # the last close opens the gate
     pids.each { |pid| Process.wait(pid) }
@@ -75,7 +75,7 @@ RSpec.describe "claiming overlapping scopes at the same moment", type: :checkout
   context "with the Redis store" do
     let(:url) { ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379/15") }
 
-    def build_store = Agent::Lock::Store::RedisStore.new(Agent::Lock::Tree.for(checkout), client: ::Redis.new(url: url))
+    def build_store = Agent::Lock::Store::RedisStore.new(Agent::Lock::Tree.for(checkout), client: Redis.new(url: url))
 
     before do
       skip "no Redis on #{url}" unless redis_running?
@@ -86,7 +86,7 @@ RSpec.describe "claiming overlapping scopes at the same moment", type: :checkout
     end
 
     def redis_running?
-      ::Redis.new(url: url, timeout: 0.2).ping == "PONG"
+      Redis.new(url: url, timeout: 0.2).ping == "PONG"
     rescue StandardError
       false
     end

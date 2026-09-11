@@ -3,7 +3,7 @@ PATH
   specs:
     agent-lock (0.2.0)
       dry-cli (~> 1.4)
-      dry-cli-autocomplete
+      dry-cli-autocomplete (~> 0.1)
       pastel (~> 0.8)
       redis (~> 5.0)
 
