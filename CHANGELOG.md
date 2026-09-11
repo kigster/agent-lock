@@ -4,12 +4,18 @@
 
 ### Added
 
+- An `agent-lock` skill, shipped in the gem under `skills/`, that teaches an
+  agent to claim files: naming itself on every call, running `alo` in the
+  checkout it writes, and claiming its own files inside an orchestrator's
+  lock. `alo skill install [--into DIR] [--force]` copies it into a skills
+  directory, and `alo skill path` prints where the bundled copy is.
 - `AGENT_LOCK_MUTEX_TIMEOUT`, the seconds a claim waits for the store's mutex.
 - `whoami`, which prints the name this session signs locks with, its parent,
   and where each came from.
 
 ### Changed
 
+- The packaged gem no longer includes `.plans/`.
 - A sub-agent that sets `AGENT_ID` but not `AGENT_PARENT_ID` takes its
   session's own name as its parent: `CLAUDE_SESSION_ID` if set, else the
   fingerprint. Claude Code runs sub-agents inside the parent's own process,

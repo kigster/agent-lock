@@ -354,6 +354,47 @@ RSpec.describe Agent::Lock::CLI do
     end
   end
 
+  describe "skill" do
+    let(:into) { expand_path("installed-skills") }
+
+    it "says where the bundled skill is, so a harness can link it instead" do
+      command = agent_lock("skill path")
+
+      aggregate_failures do
+        expect(command).to have_exit_status(0)
+        expect(File).to exist(File.join(command.stdout.strip, "SKILL.md"))
+      end
+    end
+
+    it "installs the skill into a skills directory" do
+      command = agent_lock("skill install --into #{into}")
+
+      aggregate_failures do
+        expect(command).to have_exit_status(0)
+        expect(command.stdout).to include("INSTALLED #{File.join(into, "agent-lock")}")
+        expect(File).to exist(File.join(into, "agent-lock", "SKILL.md"))
+      end
+    end
+
+    it "says a second install changed nothing" do
+      agent_lock("skill install --into #{into}")
+
+      expect(agent_lock("skill install --into #{into}").stdout).to include("UP TO DATE")
+    end
+
+    it "refuses to overwrite a copy that differs, and says how to" do
+      FileUtils.mkdir_p(File.join(into, "agent-lock"))
+      File.write(File.join(into, "agent-lock", "SKILL.md"), "edited\n")
+
+      command = agent_lock("skill install --into #{into}")
+
+      aggregate_failures do
+        expect(command).to have_exit_status(1)
+        expect(command.stderr).to include("--force")
+      end
+    end
+  end
+
   describe "the things a CLI gets wrong" do
     # dry-cli calls `exit` directly for help, which would take the whole suite
     # down if the Launcher did not catch it.
