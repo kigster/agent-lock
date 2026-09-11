@@ -27,25 +27,29 @@ module Agent
           # @param scope [String]
           # @param intent [String, nil]
           # @param options [Hash]
+          # @return [Manager::Result]
           def call(scope:, intent: nil, **options)
-            result = manager(options[:dir]).acquire(
+            manager = manager(options[:dir])
+            result = manager.acquire(
               scope, intent: intent || "unspecified",
                      enforce: options[:enforce], force: options[:force]
             )
 
-            report(result)
+            report(result, manager.stale_minutes)
             finish(result)
           end
 
           private
 
-          def report(result)
+          # @param result [Manager::Result]
+          # @param stale_minutes [Integer]
+          def report(result, stale_minutes)
             case result.status
             when :acquired then report_acquired(result)
             when :already_mine then say("ALREADY YOURS #{result.record.scope}")
             when :held
               warn_("REFUSED, do not write here")
-              report_held(result.records)
+              report_held(result.records, stale_minutes: stale_minutes)
             when :interrupted then report_interrupted(result.record)
             end
           end
@@ -59,10 +63,11 @@ module Agent
 
           # An orphan is somebody's unfinished work, so the two ways out of it
           # are spelled out rather than left to be looked up.
+          #
+          # @param record [Record] the orphaned lock on this exact scope
           def report_interrupted(record)
             warn_("INTERRUPTED WORK on #{record.scope}, left by #{record.agent_id}")
-            warn_("  #{program} resume #{record.scope}   # take it back, notes and all")
-            warn_("  #{program} break #{record.scope}    # throw it away and start over")
+            advise_interrupted(record)
           end
         end
       end

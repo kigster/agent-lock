@@ -92,7 +92,21 @@ RSpec.describe Agent::Lock::CLI do
       command = agent_lock("check workflow --json")
       parsed = JSON.parse(command.output)
 
-      expect(parsed.first).to include("scope" => "workflow/**", "intent" => "one")
+      expect(parsed.first).to include("scope" => "workflow/**", "intent" => "one", "stale" => false)
+    end
+
+    # The one refused is the one who needs to know the holder has gone
+    # quiet: it is the difference between waiting and asking a human.
+    it "tags a claim nobody has touched in hours STALE" do
+      plant("workflow/**", agent: "slow-agent", age: 3 * 3600)
+
+      command = agent_lock("check workflow/lib/cli.rb")
+
+      aggregate_failures do
+        expect(command).to have_exit_status(1)
+        expect(command.stderr).to match(%r{^HELD  workflow/\*\*  by slow-agent .*STALE$})
+        expect(command.stderr).to include("agent-lock break")
+      end
     end
 
     it "tells the holder that a scope is theirs rather than that it is free" do
@@ -118,6 +132,67 @@ RSpec.describe Agent::Lock::CLI do
         expect(agent_lock("release-all").output).to include("Released 2 lock(s)")
         expect(agent_lock("list").output).to include("No locks held")
       end
+    end
+
+    # An orphan is a note left for whoever comes next, not a claim: it blocks
+    # nobody. Counting it as held told a reader the tree was busier than it
+    # was, and gave them no way to tell which locks were real.
+    it "counts only live claims as held, and lists interrupted work on its own" do
+      agent_lock("acquire workflow 'one'")
+      plant("docs/**", agent: "crashed-agent", status: Agent::Lock::Record::ORPHANED)
+
+      command = agent_lock("list")
+
+      aggregate_failures do
+        expect(command.stdout).to include("Locks held (1):")
+        expect(command.stdout).to include("Interrupted (1):")
+        expect(command.stdout).to match(%r{^docs/\*\*\tcrashed-agent\t.*\tINTERRUPTED$})
+        expect(command.stderr).to include("agent-lock resume docs/**")
+        expect(command.stderr).to include("agent-lock break docs/**")
+      end
+    end
+
+    it "says nothing is held when all that is left is interrupted work" do
+      plant("docs/**", agent: "crashed-agent", status: Agent::Lock::Record::ORPHANED)
+
+      command = agent_lock("list")
+
+      aggregate_failures do
+        expect(command.stdout).to include("No locks held.")
+        expect(command.stdout).to include("Interrupted (1):")
+      end
+    end
+
+    it "tags a live claim nobody has touched in hours STALE, and a fresh one not" do
+      agent_lock("acquire workflow 'one'")
+      plant("docs/**", agent: "slow-agent", age: 3 * 3600)
+
+      lines = agent_lock("list").stdout.lines
+
+      aggregate_failures do
+        expect(lines.grep(/^docs/).first).to end_with("\tSTALE\n")
+        expect(lines.grep(/^workflow/).first).not_to include("STALE")
+      end
+    end
+
+    it "says in JSON which records are stale, beside which are interrupted" do
+      agent_lock("acquire workflow 'one'")
+      plant("docs/**", agent: "slow-agent", age: 3 * 3600)
+      plant("notes/**", agent: "crashed-agent", status: Agent::Lock::Record::ORPHANED)
+
+      parsed = JSON.parse(agent_lock("list --json").stdout).to_h { |record| [record["scope"], record] }
+
+      aggregate_failures do
+        expect(parsed["workflow/**"]).to include("stale" => false, "status" => "active")
+        expect(parsed["docs/**"]).to include("stale" => true, "status" => "active")
+        expect(parsed["notes/**"]).to include("stale" => false, "status" => "orphaned")
+      end
+    end
+
+    it "tags the stale ones among this session's own" do
+      plant("workflow/**", agent: "test-agent", age: 3 * 3600)
+
+      expect(agent_lock("mine").stdout).to match(%r{^workflow/\*\*\ttest-agent\t.*\tSTALE$})
     end
   end
 
