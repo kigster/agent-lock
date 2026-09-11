@@ -1,6 +1,15 @@
 # frozen_string_literal: true
 
 require "aruba/rspec"
+require "fileutils"
+
+# One working directory per rspec process, not the shared `tmp/aruba`. Aruba
+# wipes its working directory before every example, so two runs in one
+# checkout, which is what several agents in one worktree amount to, deleted
+# each other's repositories and lock stores mid-example. The failures moved
+# from run to run, and a wipe landing between `git init` and a command could
+# send that command's locks into the checkout's own store.
+ARUBA_WORKING_DIRECTORY = File.join("tmp", "aruba", Process.pid.to_s)
 
 # In-process, not forked: Aruba instantiates the Launcher with its own streams
 # and a fake Kernel, which is the whole reason the Launcher takes them as
@@ -8,7 +17,11 @@ require "aruba/rspec"
 Aruba.configure do |config|
   config.command_launcher = :in_process
   config.main_class = Agent::Lock::Launcher
+  config.working_directory = ARUBA_WORKING_DIRECTORY
 end
+
+# A directory per process would otherwise pile up, one per run, forever.
+at_exit { FileUtils.rm_rf(File.expand_path(ARUBA_WORKING_DIRECTORY, Aruba.config.root_directory)) }
 
 RSpec.shared_context "a CLI" do
   include Aruba::Api
