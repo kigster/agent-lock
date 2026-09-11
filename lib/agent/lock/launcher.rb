@@ -66,7 +66,6 @@ module Agent
         self.pastel = pastel
         @program    = program
       end
-      # rubocop:enable Metrics/ParameterLists
 
       # @return [void] always exits, with 0 unless something said otherwise
       # rubocop:disable Metrics/AbcSize

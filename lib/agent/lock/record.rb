@@ -92,7 +92,7 @@ module Agent
       # @return [Record] a copy, since a record on disk is not edited in place
       def with(intent: self.intent, **changes)
         fields = FIELDS.to_h { |field| [field, public_send(field)] }
-        self.class.new(**fields.merge(changes), intent: intent, path: path)
+        self.class.new(**fields, **changes, intent: intent, path: path)
       end
 
       # @return [String] the file's whole content
