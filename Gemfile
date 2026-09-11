@@ -9,7 +9,8 @@ gem "irb"
 gem "rake", "~> 13.0"
 gem "rspec", "~> 3.0"
 gem "rspec-its"
-
+gem "simplecov"
+gem "coverage-badge"
 gem "rubocop", "~> 1.21"
 
 # End-to-end specs run the CLI in this process rather than forking one, which

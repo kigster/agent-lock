@@ -1,5 +1,46 @@
 # frozen_string_literal: true
 
+require "fileutils"
+require "simplecov"
+require "coverage/badge"
+
+# The badge belongs to the repository, not to the gem whose suite produces it,
+# and the suite runs from workflow/. Anchoring on __dir__ rather than on the
+# working directory keeps it landing in the one docs/badges the README reads.
+#
+# The directory is made up front because the move happens in `at_exit`, and
+# without it the whole suite dies there — which reports as a passing run
+# followed by a stack trace.
+REPO_ROOT = File.expand_path("../..", __dir__)
+BADGE_DIR = File.join(REPO_ROOT, "docs", "badges")
+FileUtils.mkdir_p(BADGE_DIR)
+
+SimpleCov.start do
+  # `cover` (replacing the deprecated `track_files`) is what makes the number
+  # mean anything: without it SimpleCov only counts files some example happened
+  # to load, so a library nobody requires reports 100% of nothing. With it, an
+  # untested file counts as 0% AND the report is restricted to this pattern —
+  # which is also why `spec/` and `bin/` need no separate exclusion below.
+  cover "lib/**/*.rb"
+
+  enable_coverage :branch
+
+  self.formatters = [
+    SimpleCov::Formatter::HTMLFormatter,
+    Coverage::Badge::Formatter
+  ]
+end
+
+SimpleCov.at_exit do
+  SimpleCov.result.format!
+  # rubocop: disable RSpec/Output
+  puts "Coverage: #{SimpleCov.result.covered_percent.round(2)}%"
+  # rubocop: enable RSpec/Output
+  FileUtils.mv("coverage/badge.svg", File.join(BADGE_DIR, "coverage_badge.svg"))
+end
+
+require "tmpdir"
+
 require "agent/lock"
 require "open3"
 require "rbconfig"
