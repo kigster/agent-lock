@@ -51,7 +51,18 @@ module Agent
               warn_("REFUSED, do not write here")
               report_held(result.records, stale_minutes: stale_minutes)
             when :interrupted then report_interrupted(result.record)
+            when :parent_scope then report_parent_scope(result.record)
             end
+          end
+
+          # A refusal no amount of waiting fixes, so it says what will work
+          # instead. Locks are keyed by scope, which makes the parent's record
+          # the very one this child would have to write.
+          #
+          # @param record [Record] the parent's lock on this exact scope
+          def report_parent_scope(record)
+            warn_("REFUSED: #{record.scope} is your parent's (#{record.agent_id}) whole claim; " \
+                  "claim a narrower scope inside it")
           end
 
           def report_acquired(result)

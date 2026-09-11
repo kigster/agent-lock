@@ -53,6 +53,84 @@ RSpec.describe Agent::Lock::CLI do
         expect(command.output).to include("intent: rewriting the installer")
       end
     end
+
+    # Records are keyed by tree and scope, so the child's lock would have to
+    # be the parent's own record. Refusing is the only answer that fails
+    # closed, and the child needs telling what to do instead.
+    it "refuses a sub-agent its parent's whole claim, and tells it to narrow" do
+      set_environment_variable("AGENT_ID", "boss-agent")
+      agent_lock("acquire workflow 'fanning out'")
+      set_environment_variable("AGENT_ID", "kid-agent")
+      set_environment_variable("AGENT_PARENT_ID", "boss-agent")
+
+      command = agent_lock("acquire workflow")
+
+      aggregate_failures do
+        expect(command).to have_exit_status(1)
+        expect(command.stderr).to include(
+          "REFUSED: workflow/** is your parent's (boss-agent) whole claim; claim a narrower scope inside it"
+        )
+        expect(command.stdout).to be_empty
+      end
+    end
+  end
+
+  # A sub-agent cannot be told apart from its parent by anything but the
+  # AGENT_ID it was given, so it needs a way to see what it will be taken for
+  # before its first lock goes down under the wrong name.
+  describe "whoami" do
+    before do
+      delete_environment_variable("AGENT_PARENT_ID")
+      delete_environment_variable("CLAUDE_SESSION_ID")
+    end
+
+    let(:session_id) { Agent::Lock::Identity.new(env: {}).id }
+
+    it "says who this is, who its parent is, and where each came from" do
+      set_environment_variable("AGENT_ID", "kid-agent")
+      set_environment_variable("AGENT_PARENT_ID", "boss-agent")
+
+      command = agent_lock("whoami")
+
+      aggregate_failures do
+        expect(command).to have_exit_status(0)
+        expect(command.stdout).to match(/^id:\s+kid-agent\s+\(from AGENT_ID\)$/)
+        expect(command.stdout).to match(/^parent:\s+boss-agent\s+\(from AGENT_PARENT_ID\)$/)
+      end
+    end
+
+    it "names the session as the parent it inferred" do
+      set_environment_variable("AGENT_ID", "kid-agent")
+
+      command = agent_lock("whoami")
+
+      expect(command.stdout).to match(/^parent:\s+#{Regexp.escape(session_id)}\s+\(inferred/)
+    end
+
+    it "answers in JSON for whoever is parsing it" do
+      set_environment_variable("AGENT_ID", "kid-agent")
+
+      parsed = JSON.parse(agent_lock("whoami --json").stdout)
+
+      expect(parsed).to eq(
+        "id" => "kid-agent", "source" => "explicit", "parent_id" => session_id, "parent_source" => "inferred"
+      )
+    end
+
+    # The failure this whole command exists for: every sub-agent of one
+    # session, unnamed, resolves to this same id and none can block another.
+    it "warns a session with no name of its own that its sub-agents share it" do
+      delete_environment_variable("AGENT_ID")
+
+      command = agent_lock("whoami")
+
+      aggregate_failures do
+        expect(command).to have_exit_status(0)
+        expect(command.stdout).to match(/^id:\s+#{Regexp.escape(session_id)}\s+\(from the process fingerprint\)$/)
+        expect(command.stdout).to match(/^parent:\s+none$/)
+        expect(command.stderr).to include("AGENT_ID=<name> agent-lock")
+      end
+    end
   end
 
   describe "release" do
