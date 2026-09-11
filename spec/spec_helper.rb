@@ -12,4 +12,35 @@ RSpec.configure do |config|
   config.disable_monkey_patching!
   config.expect_with(:rspec) { |c| c.syntax = :expect }
   config.include_context "a checkout", type: :checkout
+
+  # The default backend picks Redis when one answers locally, so a developer
+  # running this suite with Redis up would otherwise have every example that
+  # does not care about backend choice write real locks into their own
+  # database, under whatever tree digest a throwaway checkout happens to
+  # hash to, with nothing here to ever clean them up. Pinning a backend here
+  # keeps the suite deterministic regardless of the machine it runs on;
+  # examples about backend selection itself override this with their own
+  # AGENT_LOCK_BACKEND, and examples about one backend's own on-disk shape
+  # pin themselves to it regardless of this setting.
+  #
+  # AGENT_LOCK_TEST_BACKEND runs the whole suite against the other backend
+  # instead: `AGENT_LOCK_TEST_BACKEND=redis bundle exec rspec`, which is how
+  # CI proves the business logic in Manager and the CLI, not just each
+  # store's own contract spec, holds up against Redis too. Redis examples
+  # default to database 15, so this never touches whatever database a
+  # developer's own Redis work lives in.
+  config.around do |example|
+    backend = ENV.fetch("AGENT_LOCK_TEST_BACKEND", "file")
+    overrides = { "AGENT_LOCK_BACKEND" => backend }
+    overrides["REDIS_URL"] = ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379/15") if backend == "redis"
+
+    with_env(overrides) { example.run }
+  end
+
+  config.before do
+    next unless ENV["AGENT_LOCK_BACKEND"] == "redis"
+
+    skip "AGENT_LOCK_TEST_BACKEND=redis, but no Redis answers on #{ENV.fetch("REDIS_URL")}" \
+      unless redis_reachable?(ENV.fetch("REDIS_URL"))
+  end
 end

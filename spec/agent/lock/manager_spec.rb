@@ -350,14 +350,18 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
       expect(tree.store_dir).to eq(File.join(checkout, ".git", "agent-locks"))
     end
 
+    # A human-readable file on disk is what the file store is for; asserted
+    # regardless of AGENT_LOCK_TEST_BACKEND, since Redis has no such file.
     it "writes a lock a person can read" do
-      luke.acquire("workflow/**", intent: "rewriting the installer")
+      with_env("AGENT_LOCK_BACKEND" => "file") do
+        luke.acquire("workflow/**", intent: "rewriting the installer")
 
-      text = Dir[File.join(tree.store_dir, "*.lock.md")].map { |f| File.read(f) }.first
+        text = Dir[File.join(tree.store_dir, "*.lock.md")].map { |f| File.read(f) }.first
 
-      aggregate_failures do
-        expect(text).to include("agent_id: luke-backend")
-        expect(text).to include("rewriting the installer")
+        aggregate_failures do
+          expect(text).to include("agent_id: luke-backend")
+          expect(text).to include("rewriting the installer")
+        end
       end
     end
   end
