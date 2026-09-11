@@ -36,4 +36,23 @@ RSpec.shared_context "a CLI" do
     run_command_and_stop("agent-lock #{line}", fail_on_error: false)
     last_command_started
   end
+
+  # The CLI as `exe/alo` starts it, under a name of its own.
+  #
+  # Aruba builds its main class with five positional arguments and no way to
+  # add a sixth, so the name goes into a one-off subclass instead. The config
+  # is this example's own copy, so the swap cannot leak into the next one.
+  #
+  # @param program [String] what the user typed, e.g. "alo"
+  # @param line [String] everything after the program name
+  # @return [Aruba::Processes::InProcess]
+  def run_as(program, line)
+    aruba.config.main_class = Class.new(Agent::Lock::Launcher) do
+      define_method(:initialize) { |*streams| super(*streams, program: program) }
+    end
+    run_command_and_stop("#{program} #{line}", fail_on_error: false)
+    last_command_started
+  ensure
+    aruba.config.main_class = Agent::Lock::Launcher
+  end
 end

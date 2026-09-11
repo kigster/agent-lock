@@ -61,8 +61,8 @@ module Agent
           # are spelled out rather than left to be looked up.
           def report_interrupted(record)
             warn_("INTERRUPTED WORK on #{record.scope}, left by #{record.agent_id}")
-            warn_("  agent-lock resume #{record.scope}   # take it back, notes and all")
-            warn_("  agent-lock break #{record.scope}    # throw it away and start over")
+            warn_("  #{program} resume #{record.scope}   # take it back, notes and all")
+            warn_("  #{program} break #{record.scope}    # throw it away and start over")
           end
         end
       end

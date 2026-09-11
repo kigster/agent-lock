@@ -38,6 +38,12 @@ module Agent
 
           def stderr = launcher.stderr
 
+          # What to call this CLI in a hint, so the command it suggests is
+          # one the user can paste back: `alo` for somebody who typed `alo`.
+          #
+          # @return [String]
+          def program = launcher.program
+
           # @param dir [String]
           # @return [Manager]
           def manager(dir) = Manager.new(tree: Tree.for(dir || "."))
