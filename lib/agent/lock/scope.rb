@@ -128,6 +128,27 @@ module Agent
         contains?(fixed_part, other.fixed_part) || contains?(other.fixed_part, fixed_part)
       end
 
+      # Whether holding this scope already means holding `other`, which is a
+      # stricter question than whether the two overlap. Only a scope that
+      # takes everything under a directory can promise that; a partial glob
+      # such as `lib/*.rb` covers nothing but itself, since working out what
+      # else it matches is the guessing #conflicts_with? refuses to do.
+      #
+      # @example
+      #   Scope.new("lib/**").covers?(Scope.new("lib/cli.rb"))   # => true
+      #   Scope.new("lib/cli.rb").covers?(Scope.new("lib/**"))   # => false
+      #
+      # @param other [Scope]
+      # @return [Boolean]
+      def covers?(other)
+        return true if pattern == other.pattern
+
+        recursive? && contains?(fixed_part, other.fixed_part)
+      end
+
+      # @return [Boolean] the whole tree, or everything under one directory
+      def recursive? = [ALL, "#{fixed_part}/#{ALL}"].include?(pattern)
+
       # @return [String] safe to use in a filename
       def slug
         text = pattern.gsub("**", "all").gsub(%r{[^A-Za-z0-9._/-]}, "").tr("/", "-").squeeze("-")

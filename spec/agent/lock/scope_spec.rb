@@ -125,6 +125,34 @@ RSpec.describe Agent::Lock::Scope, type: :checkout do
     end
   end
 
+  # Overlapping is not the same as covering. An agent holding one file that
+  # asks for the whole tree has not got the whole tree.
+  describe "cover" do
+    it "covers everything under a directory glob" do
+      expect(parse["workflow/**"]).to be_covers(parse["workflow/lib/cli.rb"])
+    end
+
+    it "covers everything from the whole tree" do
+      expect(parse["**"]).to be_covers(parse["docs/**"])
+    end
+
+    it "covers itself" do
+      expect(parse["workflow/*.rb"]).to be_covers(parse["workflow/*.rb"])
+    end
+
+    it "does not cover a wider scope, however much the two overlap" do
+      expect(parse["workflow/lib/cli.rb"]).not_to be_covers(parse["workflow/**"])
+    end
+
+    it "does not guess what a partial glob covers" do
+      expect(parse["workflow/*.rb"]).not_to be_covers(parse["workflow/cli.rb"])
+    end
+
+    it "does not cover a glob that can reach outside its directory" do
+      expect(parse["workflow/**"]).not_to be_covers(parse["**/cli.rb"])
+    end
+  end
+
   it "makes a filename-safe slug that still reads like the scope" do
     expect(parse["workflow/**"].slug).to eq("workflow-all")
   end

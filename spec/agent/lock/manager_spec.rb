@@ -67,6 +67,24 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
       expect(luke.acquire("workflow/**").status).to eq(:already_mine)
     end
 
+    it "is re-entrant for a narrower scope inside a lock it already holds" do
+      luke.acquire("workflow/**")
+
+      expect(luke.acquire("workflow/lib/cli.rb").status).to eq(:already_mine)
+    end
+
+    # Holding one file and asking for the whole tree used to answer ALREADY
+    # YOURS while writing nothing, so the rest of the tree stayed open to
+    # anybody and the asker believed it was not.
+    it "takes a wider scope for real when all it holds is a narrower one" do
+      luke.acquire("workflow/lib/cli.rb")
+
+      aggregate_failures do
+        expect(luke.acquire("workflow/**").status).to eq(:acquired)
+        expect(rey.acquire("workflow/docs/readme.md").status).to eq(:held)
+      end
+    end
+
     # A sub-agent works inside its parent's claim, and refusing it would make
     # parallel work impossible for the one harness that most needs it. It
     # still records a claim of its own, or its siblings could not see it.

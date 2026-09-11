@@ -208,14 +208,22 @@ module Agent
         return result(:parent_scope, [umbrella]) if umbrella
         return result(:held, blocking) if blocking.any?
 
-        # Only this session's own lock covers it. Taking a second lock inside
-        # your own would leave a stale one behind on release. A parent's lock
-        # does not count: a child that stopped there recorded nothing, and
-        # two siblings both "acquired" the same file.
-        return result(:already_mine, own) if own.any?
+        # Only this session's own lock covers it, and only one that contains
+        # the scope. Taking a second lock inside your own would leave a stale
+        # one behind on release. A parent's lock does not count: a child that
+        # stopped there recorded nothing, and two siblings both "acquired" the
+        # same file. Nor does a narrower lock of your own: holding one file and
+        # being told the whole tree was yours left the rest of it open.
+        covering = covering(scope, own)
+        return result(:already_mine, covering) if covering.any?
 
         interrupted(scope)
       end
+
+      # @param scope [Scope]
+      # @param records [Array<Record>] this session's own overlapping locks
+      # @return [Array<Record>] the ones that contain the whole of `scope`
+      def covering(scope, records) = records.select { |record| record.scope_object.covers?(scope) }
 
       # @param scope [Scope]
       # @param records [Array<Record>]
