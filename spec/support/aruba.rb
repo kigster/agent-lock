@@ -34,6 +34,14 @@ RSpec.shared_context "a CLI" do
     FileUtils.mkdir_p(expand_path("."))
     system("git", "init", "-q", "-b", "main", expand_path("."), out: File::NULL, err: File::NULL)
 
+    # If that init failed, the directory is just a folder inside this checkout,
+    # every command would resolve the checkout's own store, and the suite would
+    # write test locks where real agents read them. It did, once. Stop instead.
+    toplevel = IO.popen(["git", "-C", expand_path("."), "rev-parse", "--show-toplevel"], err: File::NULL, &:read).strip
+    unless File.realpath(toplevel) == File.realpath(expand_path("."))
+      raise "#{expand_path(".")} is not its own repository; refusing to run against #{toplevel}"
+    end
+
     # A tree with something in it: a scope naming a directory only means
     # "everything under it" if the directory is there to be seen.
     write_file("workflow/lib/cli.rb", "# stub\n")
