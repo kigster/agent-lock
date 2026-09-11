@@ -56,11 +56,44 @@ module Agent
         @id ||= explicit || session || fingerprint
       end
 
-      # The session that spawned this one, when a harness says so. A subagent
-      # working inside its parent's lock is not a second agent.
+      # The session that spawned this one: AGENT_PARENT_ID when a harness says
+      # so, and otherwise inferred.
+      #
+      # The inference exists because Claude Code runs a sub-agent inside its
+      # parent's own process and sets nothing to tell them apart, so without it
+      # every sub-agent resolved to its parent's fingerprint and none of them
+      # could ever block another. A sub-agent's one distinguishing mark is the
+      # AGENT_ID it was told to use. When that differs from what this session
+      # would answer to without it, the session is, by elimination, the
+      # parent.
       #
       # @return [String, nil]
-      def parent_id = presence(@env["AGENT_PARENT_ID"])
+      def parent_id
+        return @parent_id if defined?(@parent_id)
+
+        @parent_id = declared_parent || inferred_parent
+      end
+
+      # Where #id came from, so a session can check what it is being taken for
+      # before a lock is written under the wrong name.
+      #
+      # @return [Symbol] :explicit, :session or :fingerprint
+      def source
+        return :explicit if explicit
+        return :session if session
+
+        :fingerprint
+      end
+
+      # Where #parent_id came from. An inferred parent is a guess a human may
+      # want to overrule with AGENT_PARENT_ID, so it is reported as one.
+      #
+      # @return [Symbol, nil] :explicit, :inferred, or nil when there is no parent
+      def parent_source
+        return :explicit if declared_parent
+
+        :inferred if parent_id
+      end
 
       # Evidence, not identity: enough to ask later whether the holder is still
       # running. The pid alone is not enough, since pids are reused, and the
@@ -74,6 +107,23 @@ module Agent
       private
 
       def explicit = presence(@env["AGENT_ID"])
+
+      def declared_parent = presence(@env["AGENT_PARENT_ID"])
+
+      # What this session answers to when nobody names it, which is the
+      # orchestrator's id. The session id counts as well as the fingerprint:
+      # under a harness that exports CLAUDE_SESSION_ID the orchestrator's locks
+      # carry that, and a parent inferred from the fingerprint alone would
+      # match none of them. A session that named itself by its own fingerprint
+      # is not its own child.
+      #
+      # @return [String, nil]
+      def inferred_parent
+        return nil unless explicit
+
+        own = session || fingerprint
+        own unless own == explicit
+      end
 
       def session
         value = presence(@env["CLAUDE_SESSION_ID"])
