@@ -22,22 +22,35 @@ module Agent
         class SkillInstall < Base
           desc "Copy the skill this gem ships into a skills directory"
 
-          option :into, type: :string, default: nil,
-                        desc: "The skills directory, default ~/.claude/skills"
-          option :force, type: :boolean, default: false,
-                         desc: "Replace a copy that differs from this one"
+          option :into, type: :string, default: nil, aliases: ["-o"], desc: "The skills directory, default ~/.agents/skills"
+          option :for, type: :string, default: nil, aliases: ["-a"], desc: "AI coding agent name, eg 'codex', or 'claude'"
+          option :force, type: :boolean, default: false, aliases: ["-f"], desc: "Replace a copy that differs from this one"
 
-          example ["", "--into ~/.agents/skills", "--force"]
+          example ["", "--into ~/.claude/skills", "--force"]
+          example ["", "--for claude"]
 
           # @param options [Hash]
           def call(**options)
-            skill = options[:into] ? Skill.new(into: options[:into]) : Skill.new
+            into = destination_for(options)
+            skill = into ? Skill.new(into: into) : Skill.new
+
             result = skill.install(force: options[:force])
             report(result)
             finish(result)
           end
 
           private
+
+          # @param options [Hash]
+          # @return [String, nil] where to install, or nil for Skill's own default
+          def destination_for(options)
+            return options[:into] unless options[:for]
+
+            warn_("Both --for and --into options are provided; --for will be ignored") if options[:into]
+            return options[:into] if options[:into]
+
+            options[:for] == "claude" ? File.join(Dir.home, ".claude", "skills") : File.join(Dir.home, ".agents", "skills")
+          end
 
           # @param result [Skill::Result]
           def report(result)

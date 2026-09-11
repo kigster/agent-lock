@@ -327,14 +327,14 @@ RSpec.describe Agent::Lock::CLI do
 
       aggregate_failures do
         expect(command).to have_exit_status(2)
-        expect(command.stderr).to start_with("alo: unknown backend")
+        expect(command.stderr).to start_with("ERROR: alo: unknown backend")
       end
     end
 
     it "is agent-lock when nobody says otherwise" do
       set_environment_variable("AGENT_LOCK_BACKEND", "carrier-pigeon")
 
-      expect(agent_lock("list").stderr).to start_with("agent-lock: unknown backend")
+      expect(agent_lock("list").stderr).to start_with("ERROR: agent-lock: unknown backend")
     end
 
     # Everything above builds the Launcher by hand. This is the one line that
@@ -349,7 +349,7 @@ RSpec.describe Agent::Lock::CLI do
 
       aggregate_failures do
         expect(status.exitstatus).to eq(2)
-        expect(err).to start_with("alo: unknown backend")
+        expect(err).to start_with("ERROR: alo: unknown backend")
       end
     end
   end

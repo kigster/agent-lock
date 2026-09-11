@@ -12,7 +12,7 @@ module Agent
     # of the tool than the one it runs.
     #
     # @example
-    #   Agent::Lock::Skill.new(into: "~/.agents/skills").install.status  # => :installed
+    #   Agent::Lock::Skill.new(into: "~/.claude/skills").install.status  # => :installed
     class Skill
       # The skill's directory name, which is also the name it answers to.
       NAME = "agent-lock"
@@ -30,8 +30,10 @@ module Agent
         # @return [String] the bundled skill's directory
         def source = File.join(ROOT, NAME)
 
-        # @return [String] where Claude Code looks for a user's own skills
-        def default_into = File.join(Dir.home, ".claude", "skills")
+        # @return [String] where most agents other than Claude Code look for
+        #   a user's own skills; the CLI's `--for claude` points at
+        #   `~/.claude/skills` instead
+        def default_into = File.join(Dir.home, ".agents", "skills")
       end
 
       # @return [String] the skills directory being installed into
