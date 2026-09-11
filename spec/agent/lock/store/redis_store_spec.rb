@@ -10,7 +10,7 @@ require "redis"
 #
 # Database 15 by default, so the suite never writes into the database a
 # developer's own Redis work lives in.
-RSpec.describe Agent::Lock::Store::Redis, type: :checkout do
+RSpec.describe Agent::Lock::Store::RedisStore, type: :checkout do
   subject(:store) { described_class.new(tree, client: redis) }
 
   let(:url) { ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379/15") }
@@ -22,28 +22,14 @@ RSpec.describe Agent::Lock::Store::Redis, type: :checkout do
   end
 
   before do
-    skip "no Redis on #{url}" unless redis_running?
+    skip "no Redis on #{url}" unless redis_reachable?(url)
   end
 
   after do
-    next unless redis_running?
+    next unless redis_reachable?(url)
 
     store.all.each { |existing| store.delete(existing) }
     redis.del(store.mutex_key)
-  end
-
-  def redis_running?
-    ::Redis.new(url: url, timeout: 0.2).ping == "PONG"
-  rescue StandardError
-    false
-  end
-
-  def with_env(pairs)
-    previous = ENV.slice(*pairs.keys)
-    ENV.update(pairs)
-    yield
-  ensure
-    pairs.each_key { |key| previous.key?(key) ? ENV[key] = previous[key] : ENV.delete(key) }
   end
 
   it "round-trips a lock through Redis without losing a field" do
@@ -91,7 +77,7 @@ RSpec.describe Agent::Lock::Store::Redis, type: :checkout do
 
   describe "chosen deliberately, never guessed" do
     it "refuses to switch a tree that already has locks in the other backend" do
-      Agent::Lock::Store.record(tree, "file")
+      Agent::Lock::Store.claim(tree, "file")
 
       expect { with_env("AGENT_LOCK_BACKEND" => "redis") { Agent::Lock::Store.for(tree) } }
         .to raise_error(Agent::Lock::Store::Mismatch, /release them before switching/)

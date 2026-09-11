@@ -3,6 +3,7 @@
 require_relative "../error"
 require_relative "../record"
 
+require "redis"
 require "digest"
 require "securerandom"
 
@@ -18,10 +19,9 @@ module Agent
       # which is that you can `cat` a lock, so the value stored is the same
       # markdown document either way.
       #
-      # Opt in with AGENT_LOCK_BACKEND=redis. The `redis` gem is not a
-      # dependency of this one; it is required only when this store is asked
-      # for, so nobody pays for a backend they do not use.
-      class Redis
+      # Picked with AGENT_LOCK_BACKEND=redis, or by default when one answers on
+      # REDIS_URL. See Store's moduledoc for how that default is decided.
+      class RedisStore
         NAMESPACE = "agent-lock"
 
         # How long the store mutex outlives a holder that died holding it. A
@@ -43,11 +43,21 @@ module Agent
           return 0
         LUA
 
-        attr_reader :tree
+        attr_reader :tree, :client
 
         def initialize(tree, client: nil)
           @tree = tree
-          @client = client
+
+          if client.nil?
+            client, error = self.class.create_client
+            raise(error) if client.nil? && error
+
+            @client = client if client
+          else
+            @client = client
+          end
+
+          raise "no functional Redis client could be created for #{self.class.url}" unless @client
         end
 
         # @return [String]
@@ -127,11 +137,14 @@ module Agent
 
         private
 
-        # Keyed by the tree, so one Redis serves every checkout on the machine
-        # without their locks colliding.
+        # Keyed by the tree, so one Redis instance serves every checkout on the
+        # machine without their locks colliding.
         def namespace = "#{NAMESPACE}:#{digest}"
 
-        def digest = Digest::SHA256.hexdigest(tree.root)[0, 12]
+        # @return [String]
+        def url = self.class.url
+
+        def digest = ::Digest::SHA256.hexdigest(tree.root)[0, 12]
 
         # SET NX PX until it takes, backing off with jitter so that processes
         # which all lost the same round do not all come back for the next one
@@ -169,8 +182,6 @@ module Agent
 
         def ttl_seconds = Integer(ENV.fetch("AGENT_LOCK_TTL_SECONDS", 0))
 
-        def url = ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379/0")
-
         def parse(text, key)
           return nil if text.nil?
 
@@ -178,12 +189,18 @@ module Agent
           record && key ? record.with(id: key.split(":").last) : record
         end
 
-        def client
-          @client ||= begin
-            require "redis"
-            ::Redis.new(url: url)
-          rescue LoadError
-            raise Error, "AGENT_LOCK_BACKEND=redis needs the redis gem: gem install redis"
+        class << self
+          def url = ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379/0")
+
+          # @return Array[RedisClient,NilClass,Exception] the client if it could be created,
+          # or the error that prevented it
+          def create_client
+            @client ||= ::Redis.new(url: url).tap do |client|
+              _version = client.info["redis_version"]
+            end
+            [@client, nil]
+          rescue Redis::CannotConnectError, Redis::BaseError, Errno::ECONNREFUSED, SocketError => e
+            [nil, e]
           end
         end
       end

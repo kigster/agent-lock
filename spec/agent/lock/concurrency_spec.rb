@@ -67,7 +67,7 @@ RSpec.describe "claiming overlapping scopes at the same moment", type: :checkout
   end
 
   context "with the file store" do
-    def build_store = Agent::Lock::Store::FileSystem.new(Agent::Lock::Tree.for(checkout))
+    def build_store = Agent::Lock::Store::FileSystemStore.new(Agent::Lock::Tree.for(checkout))
 
     include_examples "no two overlapping claims both win"
   end
@@ -75,7 +75,7 @@ RSpec.describe "claiming overlapping scopes at the same moment", type: :checkout
   context "with the Redis store" do
     let(:url) { ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379/15") }
 
-    def build_store = Agent::Lock::Store::Redis.new(Agent::Lock::Tree.for(checkout), client: ::Redis.new(url: url))
+    def build_store = Agent::Lock::Store::RedisStore.new(Agent::Lock::Tree.for(checkout), client: ::Redis.new(url: url))
 
     before do
       skip "no Redis on #{url}" unless redis_running?

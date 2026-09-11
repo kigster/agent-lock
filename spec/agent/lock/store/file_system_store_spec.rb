@@ -3,18 +3,10 @@
 # The store-wide mutex, asserted on its own rather than only through Manager,
 # so that a regression here names the mutex instead of surfacing as one
 # overlapping lock in a race that happens to go the wrong way.
-RSpec.describe Agent::Lock::Store::FileSystem, type: :checkout do
+RSpec.describe Agent::Lock::Store::FileSystemStore, type: :checkout do
   subject(:store) { described_class.new(tree) }
 
   let(:mutex) { File.join(store.dir, described_class::MUTEX) }
-
-  def with_env(pairs)
-    previous = ENV.slice(*pairs.keys)
-    ENV.update(pairs)
-    yield
-  ensure
-    pairs.each_key { |key| previous.key?(key) ? ENV[key] = previous[key] : ENV.delete(key) }
-  end
 
   describe "#synchronize" do
     it "hands back whatever the block returns" do

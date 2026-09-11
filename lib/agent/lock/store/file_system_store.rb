@@ -10,7 +10,7 @@ module Agent
     module Store
       # Locks as files, which is the default and the one that needs nothing
       # installed. See Tree#store_dir for why they live inside `.git`.
-      class FileSystem
+      class FileSystemStore
         SUFFIX = ".lock.md"
         MUTEX = ".mutex"
 
