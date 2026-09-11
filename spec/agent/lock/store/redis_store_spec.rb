@@ -8,12 +8,13 @@ require "redis"
 # backend exists for, an atomic SET NX and a TTL that expires an abandoned
 # lock, are exactly what a double would fake.
 #
-# Database 15 by default, so the suite never writes into the database a
-# developer's own Redis work lives in.
+# RedisHelpers::TEST_REDIS_URL, fixed rather than read from REDIS_URL, so the
+# suite never writes into whatever database a developer's own Redis work, or
+# an unrelated REDIS_URL left over in the shell, lives in.
 RSpec.describe Agent::Lock::Store::RedisStore, type: :checkout do
   subject(:store) { described_class.new(tree, client: redis) }
 
-  let(:url) { ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379/15") }
+  let(:url) { RedisHelpers::TEST_REDIS_URL }
   let(:redis) { ::Redis.new(url: url) }
   let(:identity) { Agent::Lock::Identity.new(env: { "AGENT_ID" => "luke-backend" }) }
   let(:scope) { Agent::Lock::Scope.parse("workflow/**", tree: tree) }
