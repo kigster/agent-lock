@@ -230,6 +230,22 @@ RSpec.describe Agent::Lock::CLI do
       end
     end
 
+    # An agent harness reads both streams through one pipe, where STDOUT is
+    # block-buffered and STDERR is not. Unflushed, every hint arrives before
+    # the listing it belongs to. Only a real process has the buffering.
+    it "prints each hint after the record it is about, even down one pipe" do
+      plant("docs/**", agent: "crashed-agent", status: Agent::Lock::Record::ORPHANED)
+      root = File.expand_path("../../..", __dir__)
+
+      output, = Open3.capture2e(
+        { "AGENT_ID" => "test-agent" },
+        RbConfig.ruby, "-I", File.join(root, "lib"), File.join(root, "exe", "alo"), "list",
+        chdir: expand_path(".")
+      )
+
+      expect(output.index("Interrupted (1):")).to be < output.index("alo resume docs/**")
+    end
+
     it "says nothing is held when all that is left is interrupted work" do
       plant("docs/**", agent: "crashed-agent", status: Agent::Lock::Record::ORPHANED)
 

@@ -51,7 +51,16 @@ module Agent
           # @param text [String]
           def say(text) = stdout.puts(text)
 
-          def warn_(text) = stderr.puts(text)
+          # STDOUT is flushed first. An agent harness reads both streams down
+          # one pipe, where STDOUT is block-buffered and STDERR is not, and
+          # without the flush every hint arrives ahead of the record it is
+          # about.
+          #
+          # @param text [String]
+          def warn_(text)
+            stdout.flush
+            stderr.puts(text)
+          end
 
           # @param result [Manager::Result]
           def finish(result)
