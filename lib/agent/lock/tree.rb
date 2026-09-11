@@ -37,12 +37,16 @@ module Agent
       # @return [Boolean] a linked worktree rather than the original checkout
       def worktree? = !git_dir.nil? && git_dir != common_dir
 
+      # @description Resolves the directory where locks are stored by either
+      # $AGENT_LOCK_DIR environment variable if defined, or 'agent-locks'
+      # inside .git if available, or the ~/.agent-locks/<tree-digest> in user's
+      # home folder.
       # @return [String] where locks for this tree are written
       def store_dir
         return File.expand_path(ENV["AGENT_LOCK_DIR"]) if ENV["AGENT_LOCK_DIR"]
         return File.join(common_dir, "agent-locks") if common_dir
 
-        File.join(Dir.home, ".agent-locks", Digest::SHA256.hexdigest(root)[0, 12])
+        File.join(Dir.home, ".agent-locks", ::Digest::SHA256.hexdigest(root)[0, 12])
       end
 
       # A path the user typed, read from where they stand, as a name inside

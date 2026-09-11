@@ -13,7 +13,9 @@ Git does not help here. Two agents on one branch and one working tree never prod
 ## Who it is for
 
 - **People running several coding agents at once** (Claude Code, Codex, Cursor, a terminal of your own) in the same checkout.
+
 - **Orchestrators that fan out sub-agents** into one worktree, each taking a different part of it.
+
 - **Harnesses** that launch agents over a repository and need them to stay out of each other's way.
 
 Not for work that can have a checkout of its own. A git worktree per agent removes the sharing altogether, which is better than coordinating it. The locks are advisory: they protect a file only from agents that check. `--enforce` exists for the few files that must not move at all.
@@ -33,7 +35,7 @@ Or add `gem "agent-lock"` to a Gemfile.
 
 ```bash
 alo acquire "lib/billing/**" "rewriting the invoices"   # claim a corner of the tree
-alo check   lib/billing/tax.rb                          # exit 1 if somebody else holds it
+alo check   "lib/billing/tax.rb"                        # exits 1 if somebody else holds it
 alo note    "lib/billing/**" "totals done, specs red"   # where you are, for whoever comes next
 alo list                                                # everything held in this repository
 alo release-all                                         # when you are done
@@ -41,7 +43,7 @@ alo release-all                                         # when you are done
 
 A refusal tells you who and what, not just that you lost:
 
-```
+```bash
 $ alo acquire lib/billing/tax.rb
 REFUSED, do not write here
 HELD  lib/billing/**  by luke-backend  since 2026-09-09T21:04:11Z
@@ -86,7 +88,9 @@ sequenceDiagram
 Three things matter, and each one fails silently if skipped:
 
 1. **The name goes on every call.** Sub-agents run inside the parent's process and would sign every lock as the parent. Each call is also a fresh shell, so an `export AGENT_ID` from an earlier call is gone. `AGENT_ID=<name> alo whoami` shows the name a lock would be signed with.
+
 1. **Run `alo` in the checkout being written**, with `cd` or `--dir`. A lock in another repository protects nothing.
+
 1. **Sub-agents claim even inside the orchestrator's lock.** The orchestrator's lock keeps other sessions out; only a sub-agent's own claim keeps its siblings out.
 
 ### Teach your agents
@@ -94,9 +98,10 @@ Three things matter, and each one fails silently if skipped:
 The gem ships a skill that teaches an agent all of the above, so the rules reach the agents rather than living only in this README. Install it into the skills directory your agent reads:
 
 ```bash
-alo skill install                          # into ~/.claude/skills
-alo skill install --into ~/.agents/skills  # Codex, Cursor and others
-alo skill path                             # where the bundled copy is
+alo skill install                    # default: into ~/.agents/skills, for most agents
+alo skill install --for claude       # into ~/.claude/skills instead
+alo skill install --into some/path   # anywhere else, --for is ignored if both are given
+alo skill path                       # where the bundled copy is
 ```
 
 `install` refuses to overwrite a copy that differs (`--force` replaces it) and never touches a symlink, since a symlink is some other installer's.
@@ -299,24 +304,27 @@ Any command exits 2 when it cannot run at all: a scope that is empty or outside 
 | `AGENT_LOCK_DIR`           | `.git/agent-locks`                      | Keep locks somewhere else                                                |
 | `AGENT_LOCK_STALE_MINUTES` | `120`                                   | When a lock is tagged `STALE`, and when one from another machine expires |
 | `AGENT_LOCK_MUTEX_TIMEOUT` | `15`                                    | Seconds a claim waits for the store's mutex before giving up with exit 2 |
-| `AGENT_LOCK_BACKEND`       | `file`                                  | `file` or `redis`                                                        |
+| `AGENT_LOCK_BACKEND`       | `redis` if one answers, else `file`     | `file` or `redis`                                                        |
 | `AGENT_LOCK_TTL_SECONDS`   | `0`                                     | Redis expiry. `0` means no TTL                                           |
 | `REDIS_URL`                | `redis://127.0.0.1:6379/0`              | Where Redis is                                                           |
 
 ## Backends
 
-The file store is the default and needs nothing installed. Redis stores the same documents, and buys two things a filesystem cannot: its mutex holds across machines, and a TTL expires an abandoned lock without anybody having to reason about liveness.
+Redis stores the same documents as the file store, and buys two things a filesystem cannot: its mutex holds across machines, and a TTL expires an abandoned lock without anybody having to reason about liveness. A tree defaults to Redis when one answers on `REDIS_URL`, and falls back to the file store, which needs nothing installed, when none does.
+
+```bash
+AGENT_LOCK_BACKEND=redis alo acquire workflow/**   # force it, rather than autodetect
+AGENT_LOCK_BACKEND=file  alo acquire workflow/**   # or force the file store instead
+```
 
 Either way, every claim checks for conflicts and writes its lock while holding one mutex for the whole store. Refusing an atomic write of an identical scope is not enough on its own: `lib/**` and `lib/cli.rb` are different keys, and two agents claiming them at the same moment would both find the store empty and both win. The file store takes an exclusive `flock` on `.mutex` beside the locks. Redis takes `agent-lock-mutex:<tree digest>` with `SET NX PX` and a random token, and gives it back with a compare-and-delete script, so a process whose lease ran out cannot release somebody else's.
 
-```bash
-AGENT_LOCK_BACKEND=redis alo acquire workflow/**
-```
-
-The `redis` gem is not a dependency of this one. It is required only if you ask for that backend.
-
 > [!CAUTION]
-> The backend is never auto-detected. If one agent found a running Redis and switched to it while the agent beside it did not, the two would take locks in different stores, see nothing of each other, and both report success. That is worse than having no lock at all. The first store created in a tree records which backend it is, and a mismatch stops the run.
+> Picking a default from whether Redis happens to answer is still never a runtime auto-*switch*. If one agent found a running Redis and switched to it while the agent beside it did not, the two would take locks in different stores, see nothing of each other, and both report success — worse than no lock at all. The first store created in a tree records which backend it is, in a marker file, and every later process in that tree is bound to it regardless of what Redis is doing next; a mismatch stops the run rather than silently picking the other one.
+>
+> That default is decided at the one moment two processes could otherwise race: both find a virgin tree, both probe Redis, and a flaky answer could hand them different defaults before either writes the marker. The marker is claimed atomically — the first `O_CREAT|O_EXCL` wins — and every process builds from whatever ends up on disk, never from its own guess, so a race can land on either backend but never on a split.
+
+The `redis` gem ships as a dependency of this one now, since deciding the default means probing for it. If you never want that probe, or never install a local Redis, set `AGENT_LOCK_BACKEND=file` yourself.
 
 ## Freezing files, on macOS
 
@@ -335,9 +343,12 @@ alo acquire "config/credentials/**" "keys must not move during the migration" --
 
 ```bash
 bin/setup
-bundle exec rspec       # 191 examples
+bundle exec rspec                              # 215 examples, against the file backend
+AGENT_LOCK_TEST_BACKEND=redis bundle exec rspec # the same suite, against Redis instead
 bundle exec rubocop
 ```
+
+The suite runs against one backend at a time, picked by `AGENT_LOCK_TEST_BACKEND` rather than the machine's own default, so it stays deterministic whether or not Redis happens to be running: only the examples that test one backend's own on-disk or on-Redis shape care which one that is, and a Redis run defaults to database 15 so it never touches whatever database a developer's own Redis work lives in. CI runs both.
 
 The library decides and the CLI prints. Every verb is a method on `Manager` that returns a result and prints nothing, so the whole lifecycle can be tested without capturing output. `Launcher` takes `argv`, `stdin`, `stdout`, `stderr` and `kernel` as arguments, and nothing below it calls `puts` or a receiverless `exit`, which is what lets Aruba run the CLI end to end inside the test process instead of forking a Ruby per example.
 

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.0]
+
 ### Added
 
 - An `agent-lock` skill, shipped in the gem under `skills/`, that teaches an
@@ -9,13 +11,30 @@
   checkout it writes, and claiming its own files inside an orchestrator's
   lock. `alo skill install [--into DIR] [--force]` copies it into a skills
   directory, and `alo skill path` prints where the bundled copy is.
+  `--for claude` installs into `~/.claude/skills`; without `--for` or
+  `--into`, `~/.agents/skills` is the default for most other agents.
 - `AGENT_LOCK_MUTEX_TIMEOUT`, the seconds a claim waits for the store's mutex.
 - `whoami`, which prints the name this session signs locks with, its parent,
   and where each came from.
+- A virgin tree now defaults to the Redis backend when one answers on
+  `REDIS_URL`, and the file store when none does, rather than always
+  defaulting to file. `AGENT_LOCK_BACKEND` still overrides it, and a tree
+  that already has a backend recorded stays on it regardless of what Redis
+  is doing. Two processes racing to decide the default for the same virgin
+  tree are made to agree: the marker recording the choice is claimed with
+  `O_CREAT|O_EXCL`, and every process builds from whichever value actually
+  lands on disk rather than its own guess. See `README.md#backends`.
+- Colorized `--help` and error output via `pastel`, disabled automatically
+  when stdout is not a terminal.
+- `AGENT_LOCK_TEST_BACKEND`, which runs the whole spec suite against Redis
+  instead of the file store. CI now runs the suite once per backend.
 
 ### Changed
 
 - The packaged gem no longer includes `.plans/`.
+- `redis` and `pastel` are now runtime dependencies of the gem, rather than
+  gems you install yourself to opt into the Redis backend: deciding the
+  default now means probing for Redis whether or not you asked for it.
 - A sub-agent that sets `AGENT_ID` but not `AGENT_PARENT_ID` takes its
   session's own name as its parent: `CLAUDE_SESSION_ID` if set, else the
   fingerprint. Claude Code runs sub-agents inside the parent's own process,
