@@ -178,7 +178,18 @@ module Agent
         def release(token) = client.eval(RELEASE, keys: [mutex_key], argv: [token]) == 1
 
         # @return [Float] seconds to wait for the mutex before giving up
-        def mutex_timeout = Float(ENV.fetch("AGENT_LOCK_MUTEX_TIMEOUT", MUTEX_TIMEOUT))
+        # @raise [Error] when AGENT_LOCK_MUTEX_TIMEOUT is not a finite,
+        #   non-negative number: `Float` accepts "Infinity" and "NaN", and
+        #   either makes the deadline in `wait_for` unreachable, hanging the
+        #   poll loop forever instead of timing out.
+        def mutex_timeout
+          timeout = Float(ENV.fetch("AGENT_LOCK_MUTEX_TIMEOUT", MUTEX_TIMEOUT))
+          unless timeout.finite? && timeout >= 0
+            raise Error, "AGENT_LOCK_MUTEX_TIMEOUT must be a finite, non-negative number, got #{timeout}"
+          end
+
+          timeout
+        end
 
         def ttl_seconds = Integer(ENV.fetch("AGENT_LOCK_TTL_SECONDS", 0))
 

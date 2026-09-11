@@ -345,6 +345,34 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
     end
   end
 
+  # #list and #mine used to read the store straight through, so a lock whose
+  # holder had already died still came back as held until some other command
+  # happened to reap it first.
+  describe "reaping before reporting" do
+    it "#list does not report a dead holder's notes-free lock as still held" do
+      rey.acquire("workflow/**")
+      kill(rey)
+
+      expect(luke.list.records).to be_empty
+    end
+
+    it "#list reports a dead holder's lock with notes as interrupted, not held" do
+      rey.acquire("workflow/**")
+      rey.note("workflow/**", "halfway")
+      kill(rey)
+
+      record = luke.list.records.find { |r| r.scope == "workflow/**" }
+      expect(record.status).to eq(Agent::Lock::Record::ORPHANED)
+    end
+
+    it "#mine does not report this session's own dead lock as still held" do
+      luke.acquire("workflow/**")
+      kill(luke)
+
+      expect(luke.mine.records).to be_empty
+    end
+  end
+
   describe "the store the locks live in" do
     it "hides inside .git, where no repository has to ignore them" do
       expect(tree.store_dir).to eq(File.join(checkout, ".git", "agent-locks"))

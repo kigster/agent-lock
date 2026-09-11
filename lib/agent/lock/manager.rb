@@ -95,10 +95,16 @@ module Agent
       end
 
       # @return [Result] every lock in the store, this tree's siblings included
-      def list = result(:listed, store.all)
+      def list
+        reap
+        result(:listed, store.all)
+      end
 
       # @return [Result]
-      def mine = result(:listed, store.all.select { |record| record.held_by?(identity) })
+      def mine
+        reap
+        result(:listed, store.all.select { |record| record.held_by?(identity) })
+      end
 
       # @return [Result]
       def release_all

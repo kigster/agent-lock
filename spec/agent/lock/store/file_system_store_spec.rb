@@ -73,6 +73,24 @@ RSpec.describe Agent::Lock::Store::FileSystemStore, type: :checkout do
 
       expect(entered).to be(false)
     end
+
+    # "Infinity" and "NaN" are rejected by Float() itself, but a literal that
+    # overflows a double, such as an exponent this large, parses clean and
+    # returns Infinity, which would make the deadline below unreachable and
+    # hang the poll loop forever instead of timing out.
+    it "refuses a non-finite AGENT_LOCK_MUTEX_TIMEOUT rather than polling forever" do
+      with_env("AGENT_LOCK_MUTEX_TIMEOUT" => "1e1000") do
+        expect { store.synchronize { nil } }
+          .to raise_error(Agent::Lock::Error, /AGENT_LOCK_MUTEX_TIMEOUT must be a finite, non-negative number/)
+      end
+    end
+
+    it "refuses a negative AGENT_LOCK_MUTEX_TIMEOUT" do
+      with_env("AGENT_LOCK_MUTEX_TIMEOUT" => "-5") do
+        expect { store.synchronize { nil } }
+          .to raise_error(Agent::Lock::Error, /AGENT_LOCK_MUTEX_TIMEOUT must be a finite, non-negative number/)
+      end
+    end
   end
 
   # @return [Integer] the child's pid
