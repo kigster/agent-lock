@@ -1,6 +1,32 @@
 # frozen_string_literal: true
 
+# Things that happen to a holder after it took a lock, done to the lock in the
+# real store rather than by stubbing the clock or the process table, which
+# would test the stub.
+module HolderHistory
+  # @param manager [Agent::Lock::Manager] whose locks to rewrite
+  # @yieldparam record [Agent::Lock::Record]
+  # @yieldreturn [Agent::Lock::Record] what to store in its place
+  def rewrite(manager)
+    manager.store.all.select { |record| record.agent_id == manager.identity.id }.each do |record|
+      manager.store.update(yield(record))
+    end
+  end
+
+  # Every manager in one spec run shares the test process's session pid, so
+  # killing one holder means pointing its locks at a process that has exited.
+  #
+  # @param manager [Agent::Lock::Manager]
+  def kill(manager)
+    pid = Process.spawn("true")
+    Process.wait(pid)
+    rewrite(manager) { |record| record.with(pid: pid) }
+  end
+end
+
 RSpec.describe Agent::Lock::Manager, type: :checkout do
+  include HolderHistory
+
   subject(:luke) { manager_for("luke-backend") }
 
   let(:rey) { manager_for("rey-frontend") }
@@ -241,16 +267,18 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
   end
 
   describe "reaping" do
+    let(:three_hours_ago) { (Time.now.utc - (3 * 3600)).iso8601 }
+
     # The case that matters: a session killed mid-run leaves a lock nobody can
     # release, and the next agent has to be able to tell that from a lock whose
     # holder is still working.
-    it "clears a lock whose holder is long gone and nobody has touched" do
+    it "clears a lock whose holder is gone" do
       rey.acquire("workflow/**")
-      impatient = manager_for("luke-backend", stale_minutes: 0)
+      kill(rey)
 
       aggregate_failures do
-        expect(impatient.reap.map(&:scope)).to eq(["workflow/**"])
-        expect(impatient.acquire("workflow/**").status).to eq(:acquired)
+        expect(luke.reap.map(&:scope)).to eq(["workflow/**"])
+        expect(luke.acquire("workflow/**").status).to eq(:acquired)
       end
     end
 
@@ -258,6 +286,44 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
       rey.acquire("workflow/**")
 
       expect(luke.reap).to be_empty
+    end
+
+    # A long refactor is not a crash. Reaping by age used to take the lock
+    # from under a session still working in there, and the next agent walked
+    # straight in. Age is reported instead, and breaking it stays a decision
+    # somebody announces.
+    it "never reaps a live holder's lock, however old, but reports it stale" do
+      rey.acquire("workflow/**")
+      rewrite(rey) { |record| record.with(created_at: three_hours_ago) }
+
+      aggregate_failures do
+        expect(luke.reap).to be_empty
+        expect(luke.acquire("workflow/lib/cli.rb").status).to eq(:held)
+        expect(luke.list.record.stale?(luke.stale_minutes)).to be(true)
+      end
+    end
+
+    # A lock written on another machine, through a synced or shared store,
+    # has a holder nobody here can ask about. Time is all there is, measured
+    # from the last thing it wrote, so its notes keep it alive.
+    context "when the holder is on another host" do
+      before do
+        rey.acquire("workflow/**")
+        rewrite(rey) { |record| record.with(host: "elsewhere.example", created_at: three_hours_ago) }
+      end
+
+      it "expires once nobody has touched it for longer than the window" do
+        expect(luke.reap.map(&:scope)).to eq(["workflow/**"])
+      end
+
+      it "does not expire while its holder keeps writing notes" do
+        rey.note("workflow/**", "still going")
+
+        aggregate_failures do
+          expect(luke.reap).to be_empty
+          expect(luke.acquire("workflow/lib/cli.rb").status).to eq(:held)
+        end
+      end
     end
   end
 
@@ -318,16 +384,22 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
     end
   end
 end
+
 RSpec.describe "surviving a restart", type: :checkout do
+  include HolderHistory
+
   subject(:luke) { manager_for("luke-backend") }
 
-  let(:impatient) { manager_for("rey-frontend", stale_minutes: 0) }
+  # Death, not age, is what reaps a lock on this host. Luke dies in each
+  # example before anybody looks.
+  let(:successor) { manager_for("rey-frontend") }
 
   it "keeps the notes of a session that died, rather than reaping them" do
     luke.acquire("workflow/**", intent: "rewriting the installer")
     luke.note("workflow/**", "installer rewritten, specs still red")
 
-    impatient.reap
+    kill(luke)
+    successor.reap
     record = Agent::Lock::Manager.new(tree: tree, identity: luke.identity).list.record
 
     aggregate_failures do
@@ -339,17 +411,19 @@ RSpec.describe "surviving a restart", type: :checkout do
   it "deletes a lock that recorded nothing, since there is nothing to come back to" do
     luke.acquire("workflow/**", intent: "rewriting the installer")
 
-    impatient.reap
+    kill(luke)
+    successor.reap
 
-    expect(impatient.list.records).to be_empty
+    expect(successor.list.records).to be_empty
   end
 
   it "points the next agent at the interrupted work rather than overwriting it" do
     luke.acquire("workflow/**")
     luke.note("workflow/**", "halfway")
-    impatient.reap
+    kill(luke)
+    successor.reap
 
-    result = impatient.acquire("workflow/**")
+    result = successor.acquire("workflow/**")
 
     aggregate_failures do
       expect(result.status).to eq(:interrupted)
@@ -363,24 +437,27 @@ RSpec.describe "surviving a restart", type: :checkout do
   it "does not block work elsewhere in the tree" do
     luke.acquire("workflow/**")
     luke.note("workflow/**", "halfway")
-    impatient.reap
+    kill(luke)
+    successor.reap
 
-    expect(impatient.acquire("docs/**").status).to eq(:acquired)
+    expect(successor.acquire("docs/**").status).to eq(:acquired)
   end
 
   it "can be thrown away by whoever decides it is not worth resuming" do
     luke.acquire("workflow/**")
     luke.note("workflow/**", "halfway")
-    impatient.reap
-    impatient.break_lock("workflow/**")
+    kill(luke)
+    successor.reap
+    successor.break_lock("workflow/**")
 
-    expect(impatient.acquire("workflow/**").status).to eq(:acquired)
+    expect(successor.acquire("workflow/**").status).to eq(:acquired)
   end
 
   it "hands the work back, notes and all, to whoever resumes it" do
     luke.acquire("workflow/**", intent: "rewriting the installer")
     luke.note("workflow/**", "installer rewritten, specs still red")
-    impatient.reap
+    kill(luke)
+    successor.reap
 
     # A new session: after a reboot the pid is different and so is the
     # fingerprint, so resuming cannot depend on being recognised.

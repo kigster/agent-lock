@@ -35,7 +35,9 @@ module Agent
         @stale_minutes = stale_minutes
       end
 
-      # @return [Integer] how long a lock nobody can disprove is trusted for
+      # @return [Integer] how long a lock whose holder cannot be checked is
+      #   trusted for, and how long a live one goes untouched before it is
+      #   reported stale
       def stale_minutes
         @stale_minutes ||= Integer(ENV.fetch("AGENT_LOCK_STALE_MINUTES", DEFAULT_STALE_MINUTES))
       end
@@ -116,9 +118,11 @@ module Agent
         result(:broken, [record])
       end
 
-      # Locks whose holder is provably gone, or that nobody has touched in so
-      # long that nobody can say. Reaped before any decision that depends on
-      # them, never on a schedule.
+      # Locks whose holder is provably gone, or, for a holder on another host
+      # that cannot be asked, that nobody has touched in so long that nobody
+      # can say. A live holder's lock is never among them, however old; see
+      # Record#expired?. Reaped before any decision that depends on them,
+      # never on a schedule.
       #
       # A lock with nothing written in it is deleted. One whose holder wrote
       # down what it was doing is orphaned instead: the process is gone, the

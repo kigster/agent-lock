@@ -161,20 +161,19 @@ module Agent
         ProcessInfo.alive?(pid, started: started)
       end
 
-      # A lock nobody can prove is dead, and nobody has touched in a long time.
-      # The liveness check answers for a session that crashed on this machine;
-      # this answers for one that cannot be checked at all.
+      # Whether the claim is void, so reaping it takes nothing from anybody.
       #
-      # @param minutes [Integer]
+      # On this host the holder can be asked, and its answer is the only one
+      # that counts: a live holder's lock is never expired, however old. Age
+      # used to count here too, measured from `created_at`, so a session two
+      # hours into a refactor lost its lock mid-edit and the next agent walked
+      # straight in. A holder on another host cannot be asked, so time is all
+      # there is, measured from its last write so that notes act as a
+      # heartbeat.
+      #
+      # @param minutes [Integer] how long an unverifiable lock is trusted
       # @return [Boolean]
-      def expired?(minutes)
-        return true if same_host? && !alive?
-        return false if created_at.nil?
-
-        Time.now.utc - Time.parse(created_at) > minutes * 60
-      rescue ArgumentError
-        false
-      end
+      def expired?(minutes) = same_host? ? !alive? : untouched_for?(minutes)
 
       # A claim still standing, whose holder has not touched it in longer than
       # anybody should need. Reported, never acted on: the holder may be alive
@@ -182,14 +181,7 @@ module Agent
       #
       # @param minutes [Integer]
       # @return [Boolean]
-      def stale?(minutes)
-        touched = updated_at || created_at
-        return false if orphaned? || touched.nil?
-
-        Time.now.utc - Time.parse(touched) > minutes * 60
-      rescue ArgumentError
-        false
-      end
+      def stale?(minutes) = active? && untouched_for?(minutes)
 
       # @return [String] one line, for a listing
       def summary
@@ -208,6 +200,17 @@ module Agent
       def descendant_of?(identity) = !parent_agent_id.nil? && parent_agent_id == identity.id
 
       def same_host? = host.nil? || host == Socket.gethostname
+
+      # A lock with no readable timestamp is left alone rather than guessed
+      # at: reaping on a parse error would delete live claims.
+      def untouched_for?(minutes)
+        touched = updated_at || created_at
+        return false if touched.nil?
+
+        Time.now.utc - Time.parse(touched) > minutes * 60
+      rescue ArgumentError
+        false
+      end
     end
   end
 end
