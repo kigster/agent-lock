@@ -65,7 +65,7 @@ In order of preference:
 | Source | When it applies |
 | :-- | :-- |
 | `AGENT_ID` | A human or a harness named this session on purpose |
-| `CLAUDE_SESSION_ID` | Claude Code sets it, and it survives `--resume` |
+| `CLAUDE_SESSION_ID` | A harness that exports it, since it survives `--resume` |
 | Fingerprint | Neither of the above is set |
 
 The fingerprint walks up from the current process until it finds an ancestor
@@ -77,6 +77,9 @@ for as long as the session lives and differs from anybody else's.
 > [!NOTE]
 > The start time is in the hash on purpose. Pids get recycled, and a new
 > session that lands on a dead one's number should not inherit its locks.
+
+`alo whoami` prints the name this session would sign a lock with, its parent,
+and where each came from. Run it before the first claim if in doubt.
 
 ### Locks live inside `.git`
 
@@ -130,6 +133,17 @@ conflict with `workflow/**`.
 > whether two globs can ever match the same path has answers nobody can
 > predict, and the price of guessing wrong is somebody's lost work.
 
+A scope is read from where you stand, globs included, and an absolute path
+inside the tree is made relative. So `$PWD/lib/**` and `lib/**` are the same
+claim, and `*.rb` typed in `lib/` is `lib/*.rb`. Only `.`, `*` and `**` mean
+the whole tree from anywhere. Two things are refused with exit 2 rather than
+guessed at:
+
+| Scope | Why it is refused |
+| :-- | :-- |
+| `""` | Usually an unset variable. Claiming the whole tree by accident blocks everybody; write `**` if you mean it |
+| `/etc/passwd`, `../other/**` | Outside the tree, so no lock in this store can protect it |
+
 ### Sub-agents are a family, not one holder
 
 Ownership and blocking are separate questions, and conflating them is what lets
@@ -138,18 +152,49 @@ sibling sub-agents overwrite each other.
 | Relationship | May claim an overlapping scope | Appears in `mine`, can be released |
 | :-- | :-- | :-- |
 | Yourself | Yes, it is already yours | Yes |
-| Your parent session | Yes, you work inside its claim | Yes |
+| Your parent session | Yes, inside its claim, and the claim is recorded as yours | No |
 | A sub-agent you spawned | No, you handed that scope out | Yes, so cleanup takes them with it |
 | A sibling sub-agent | No | No |
 
-Set `AGENT_PARENT_ID` on a sub-agent to the parent's `AGENT_ID`, and the rest
-follows.
+A sub-agent claiming inside its parent's lock gets a lock of its own, and that
+lock is what keeps its siblings out. Asking for exactly the parent's scope is
+refused, since that would leave nothing for a sibling to be kept out of; claim
+something narrower. A sub-agent's `release-all` gives back its own locks and
+its children's, never its parent's.
+
+#### Sub-agents that share their parent's process
+
+Claude Code runs sub-agents inside the parent's own `claude` process, and sets
+nothing in the environment that tells them apart. They therefore share the
+parent's fingerprint, and without help every one of them would sign locks as
+the parent and none would ever block another.
+
+So a sub-agent names itself, on every call, since each command runs in a fresh
+shell and an `export` does not survive to the next one:
+
+```bash
+AGENT_ID=luke-backend alo whoami                        # id luke-backend, parent claude-1f4c8a02 (inferred)
+AGENT_ID=luke-backend alo acquire lib/billing/** "invoices"
+AGENT_ID=luke-backend alo release-all
+```
+
+When `AGENT_ID` is set and `AGENT_PARENT_ID` is not, the parent is taken to be
+the session's own name, `CLAUDE_SESSION_ID` if the harness exports it and the
+fingerprint otherwise, which is the orchestrator running bare `alo`. Set
+`AGENT_PARENT_ID` explicitly when the parent named itself too.
+
+> [!NOTE]
+> The same rule applies in a terminal. Setting `AGENT_ID` there makes the
+> terminal's own session your parent, so a bare `alo` typed in that terminal
+> can release what you claimed under the name.
 
 ### A crash does not strand the tree
 
-A lock whose process is gone, or that nobody has touched in
-`AGENT_LOCK_STALE_MINUTES` (120 by default), is cleared out of the way. What
-happens next depends on whether anything was written down:
+A lock is cleared out of the way when its holder is provably gone: the process
+that signed it has exited, on this machine. A holder on another machine cannot
+be checked, so its lock is trusted until nobody has touched it for
+`AGENT_LOCK_STALE_MINUTES` (120 by default). Every `note` counts as a touch.
+What happens next depends on whether anything was written down:
 
 | The lock has | What happens to it |
 | :-- | :-- |
@@ -159,8 +204,8 @@ happens next depends on whether anything was written down:
 ```
 $ alo acquire workflow/**
 INTERRUPTED WORK on workflow/**, left by luke-backend
-  agent-lock resume workflow/**   # take it back, notes and all
-  agent-lock break workflow/**    # throw it away and start over
+  alo resume workflow/**   # take it back, notes and all
+  alo break workflow/**    # throw it away and start over
 ```
 
 > [!WARNING]
@@ -168,37 +213,63 @@ INTERRUPTED WORK on workflow/**, left by luke-backend
 > because the notes inside it may be the only record of half-finished work.
 > Choose `resume` or `break`.
 
+A live holder's lock is never cleared, however old it is. An agent may
+legitimately work on one scope for hours, and deleting its lock underneath it
+would hand its files to the next agent while it is still writing them. Past
+the stale window `list`, `check` and `mine` tag it `STALE` instead, and
+taking it is a `break` that somebody announces first.
+
+```
+$ alo list
+Locks held (2):
+app/**	orchestrator	2026-09-11T16:04:56Z
+  fanning out
+docs/**	slow-agent	2026-09-11T13:04:55Z	STALE
+  rewriting the guides
+Interrupted (1):
+db/**	crashed-agent	2026-09-11T15:54:55Z	INTERRUPTED
+  splitting the migrations
+```
+
+Only live claims are counted as held. `--json` gives every record its
+`status` and a `stale` flag.
+
 ## Commands
 
 | Command | Does | Exit code |
 | :-- | :-- | :-- |
-| `acquire <scope> [intent]` | Claim a scope | 1 if held or interrupted |
+| `acquire <scope> [intent]` | Claim a scope | 1 if held, interrupted, or exactly your parent's scope |
 | `release <scope>` | Give it back | 1 if it belongs to somebody else |
 | `check <scope>` | Report who holds it | 1 if held by another session |
 | `note <scope> <text>` | Record progress inside a lock you hold | 1 if you do not hold it |
 | `resume <scope>` | Take back work a crash interrupted | 1 if there is nothing to resume |
 | `list` | Every lock in the store | 0 |
-| `mine` | What this session holds | 0 |
-| `release-all` | Everything this session holds | 0 |
+| `mine` | What this session and its sub-agents hold | 0 |
+| `release-all` | Everything this session and its sub-agents hold | 0 |
 | `break <scope>` | Take a live lock away from its holder | 0 |
+| `whoami` | The name this session signs locks with, and its parent | 0 |
 
 Flags:
 
 | Flag | Where | Does |
 | :-- | :-- | :-- |
-| `--json` | `check`, `list`, `mine` | Machine-readable output |
+| `--json` | `check`, `list`, `mine`, `whoami` | Machine-readable output |
 | `--dir PATH` | Everywhere | Work as if run from `PATH` |
 | `--enforce` | `acquire` | Also make the matched files unwritable |
 | `--force` | `acquire` | Permit `--enforce` on a very wide scope |
+
+Any command exits 2 when it cannot run at all: a scope that is empty or
+outside the tree, a backend mismatch, or a store it cannot reach.
 
 ## Configuration
 
 | Variable | Default | Does |
 | :-- | :-- | :-- |
 | `AGENT_ID` | fingerprint | Name this session yourself |
-| `AGENT_PARENT_ID` | none | The session that spawned this one |
+| `AGENT_PARENT_ID` | the fingerprint, when `AGENT_ID` is set | The session that spawned this one |
 | `AGENT_LOCK_DIR` | `.git/agent-locks` | Keep locks somewhere else |
-| `AGENT_LOCK_STALE_MINUTES` | `120` | How long an unverifiable lock is trusted |
+| `AGENT_LOCK_STALE_MINUTES` | `120` | When a lock is tagged `STALE`, and when one from another machine expires |
+| `AGENT_LOCK_MUTEX_TIMEOUT` | `15` | Seconds a claim waits for the store's mutex before giving up with exit 2 |
 | `AGENT_LOCK_BACKEND` | `file` | `file` or `redis` |
 | `AGENT_LOCK_TTL_SECONDS` | `0` | Redis expiry. `0` means no TTL |
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` | Where Redis is |
@@ -206,9 +277,18 @@ Flags:
 ## Backends
 
 The file store is the default and needs nothing installed. Redis stores the
-same documents, and buys two things a filesystem cannot: `SET NX` settles a
-race between two machines, and a TTL expires an abandoned lock without anybody
-having to reason about liveness.
+same documents, and buys two things a filesystem cannot: its mutex holds across
+machines, and a TTL expires an abandoned lock without anybody having to reason
+about liveness.
+
+Either way, every claim checks for conflicts and writes its lock while holding
+one mutex for the whole store. Refusing an atomic write of an identical scope is
+not enough on its own: `lib/**` and `lib/cli.rb` are different keys, and two
+agents claiming them at the same moment would both find the store empty and
+both win. The file store takes an exclusive `flock` on `.mutex` beside the
+locks. Redis takes `agent-lock-mutex:<tree digest>` with `SET NX PX` and a
+random token, and gives it back with a compare-and-delete script, so a
+process whose lease ran out cannot release somebody else's.
 
 ```bash
 AGENT_LOCK_BACKEND=redis alo acquire workflow/**
@@ -256,6 +336,11 @@ files, claim the narrowest scope that covers your writes:
 If it refuses, work somewhere else. Record progress with `alo note` so an
 interrupted session can be picked up. Release with `alo release-all` when you
 are done.
+
+A sub-agent prefixes every call with its own name, because it shares its
+parent's process and would otherwise sign locks as the parent:
+
+    AGENT_ID=<sub-agent-name> alo acquire <scope> "<what you are doing>"
 ```
 
 Advisory locks work because everybody checks. That is why the rule belongs in
@@ -265,7 +350,7 @@ the instructions your agents load, and not only in this README.
 
 ```bash
 bin/setup
-bundle exec rspec       # 61 examples
+bundle exec rspec       # 191 examples
 bundle exec rubocop
 ```
 
