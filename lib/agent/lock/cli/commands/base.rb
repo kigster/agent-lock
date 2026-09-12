@@ -39,7 +39,7 @@ module Agent
           def stderr = launcher.stderr
 
           # What to call this CLI in a hint, so the command it suggests is
-          # one the user can paste back: `alo` for somebody who typed `alo`.
+          # one the user can paste back: `alock` for somebody who typed `alock`.
           #
           # @return [String]
           def program = launcher.program

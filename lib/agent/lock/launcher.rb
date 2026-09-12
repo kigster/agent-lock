@@ -33,7 +33,7 @@ module Agent
       # @return [Integer, nil]
       attr_accessor :exit_code
 
-      # The name the user typed, `alo` or `agent-lock`, for every hint and
+      # The name the user typed, `alock` or `agent-lock`, for every hint and
       # error prefix. A hint naming the other one may not be on the PATH, or
       # may be the old shell script that shadows this gem's `agent-lock`.
       #
@@ -103,7 +103,7 @@ module Agent
         p(bold(yellow("Agent Lock, Version #{green(Agent::Lock::VERSION)}")))
         p
         p(bold(blue("Usage:")))
-        p("    alo [command [ subcommand ]] [options]")
+        p("    alock [command [ subcommand ]] [options]")
         p
         p(bold(blue("Description:")))
         p("    This is a CLI utility aimed at the agents working concurrently in the same")

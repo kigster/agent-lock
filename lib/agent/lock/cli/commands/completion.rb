@@ -6,7 +6,7 @@ module Agent
   module Lock
     module CLI
       module Commands
-        # `alo completion bash|zsh`, from dry-cli-autocomplete, with the two
+        # `alock completion bash|zsh`, from dry-cli-autocomplete, with the two
         # things that gem's command cannot do for us restated here.
         #
         # It writes to `$stdout` directly, which the in-process launcher can
@@ -20,7 +20,7 @@ module Agent
           # test runner names the runner, and which upstream reads at load
           # time anyway.
           example [
-            "bash > \"$(brew --prefix)/etc/bash_completion.d/alo\"",
+            "bash > \"$(brew --prefix)/etc/bash_completion.d/alock\"",
             "zsh  > \"${fpath[1]}/_alo\""
           ]
 

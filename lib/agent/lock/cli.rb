@@ -13,7 +13,7 @@ module Agent
       # rather than from $PROGRAM_NAME, which under a test runner is the
       # runner. The completion script it emits names the program in every
       # line, so guessing it wrong is not a cosmetic mistake.
-      PROGRAM_NAME = "alo"
+      PROGRAM_NAME = "alock"
 
       # A registry whose commands are already bound to this launcher, so a
       # command writes to the streams it was given rather than to the process's.

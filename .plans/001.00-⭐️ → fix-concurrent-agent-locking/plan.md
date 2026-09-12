@@ -58,7 +58,7 @@ Owns `lib/agent/lock/launcher.rb`, `lib/agent/lock/cli.rb`, `lib/agent/lock/cli/
 - [x] Hints and the error prefix name the program that was run. The exe files pass `File.basename($PROGRAM_NAME)`; the default is `agent-lock`.
 - [x] `list` counts only active locks as held, shows orphaned ones in their own "Interrupted" section with the `resume`/`break` hint, and tags live locks past the stale window `STALE`. `check` and `mine` tag the same way. `--json` gains `"stale": true|false`.
 - [x] `acquire` prints `:parent_scope` as a refusal that tells the child to claim something narrower.
-- [x] New `alo whoami [--json]`: id, parent, and where each came from.
+- [x] New `alock whoami [--json]`: id, parent, and where each came from.
 
 Commits: program name; orphan and stale reporting; `whoami` and the `:parent_scope` message.
 
@@ -71,7 +71,7 @@ Commits: program name; orphan and stale reporting; `whoami` and the `:parent_sco
 
 ## Rules for every unit
 
-- Claim each file before editing it, as yourself: `AGENT_ID=<unit-name> AGENT_PARENT_ID=claude-2b81adb4 alo acquire <path> "<intent>"`. Every `alo` call carries that prefix. Release with the same prefix and `alo release-all` at the end.
+- Claim each file before editing it, as yourself: `AGENT_ID=<unit-name> AGENT_PARENT_ID=claude-2b81adb4 alock acquire <path> "<intent>"`. Every `alock` call carries that prefix. Release with the same prefix and `alock release-all` at the end.
 - Test first. Iterate with only your own spec files; the full suite is unit 5's job, because other units' files are mid-edit.
 - `bundle exec rubocop <your files>` is clean before you commit.
 - Commit only your own paths: `git add <new files>` then `git commit -m "..." -- <your paths>`. If `index.lock` exists, wait a second and retry. Never commit another unit's files, never push, and never touch `README.md`, `CHANGELOG.md` or `sig/`.

@@ -5,7 +5,7 @@ require "fileutils"
 module Agent
   module Lock
     # The skill this gem ships: a SKILL.md that teaches an agent how to claim
-    # files with `alo`, copied into whichever skills directory the agent reads.
+    # files with `alock`, copied into whichever skills directory the agent reads.
     #
     # It lives inside the gem rather than in a repository of its own so that
     # the instructions an agent follows can never describe a different version

@@ -1,4 +1,4 @@
-# Agent::Lock
+# Agent::Lock (v0.2.0)
 
 [![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml)
 
@@ -6,7 +6,7 @@ Advisory file locks for coding agents that share a checkout.
 
 ## What it is
 
-`agent-lock` is a gem with one executable, `alo` (also installed as `agent-lock`). An agent runs `alo acquire <scope>` before it writes, and learns in one reply whether anybody else is working there: who, since when, and doing what. It works for separate sessions in one checkout, and for the sub-agents of a single session, which is the harder case.
+`agent-lock` is a gem with one executable, `alock` (also installed as `agent-lock`). An agent runs `alock acquire <scope>` before it writes, and learns in one reply whether anybody else is working there: who, since when, and doing what. It works for separate sessions in one checkout, and for the sub-agents of a single session, which is the harder case.
 
 Git does not help here. Two agents on one branch and one working tree never produce a conflict: the second writer simply wins, and the first one's work is gone without an error anywhere. A lock stops that, but only if every writer can be named reliably, even though an agent harness runs each command in a brand new shell. Making that name stable, and keeping claims correct when several agents ask at the same moment, is most of what this gem does.
 
@@ -26,7 +26,7 @@ Not for work that can have a checkout of its own. A git worktree per agent remov
 
 ```bash
 gem install agent-lock
-alo version        # alo must be on PATH
+alock version        # alock must be on PATH
 ```
 
 Or add `gem "agent-lock"` to a Gemfile.
@@ -34,17 +34,17 @@ Or add `gem "agent-lock"` to a Gemfile.
 ### Claim before you write
 
 ```bash
-alo acquire "lib/billing/**" "rewriting the invoices"   # claim a corner of the tree
-alo check   "lib/billing/tax.rb"                        # exits 1 if somebody else holds it
-alo note    "lib/billing/**" "totals done, specs red"   # where you are, for whoever comes next
-alo list                                                # everything held in this repository
-alo release-all                                         # when you are done
+alock acquire "lib/billing/**" "rewriting the invoices"   # claim a corner of the tree
+alock check   "lib/billing/tax.rb"                        # exits 1 if somebody else holds it
+alock note    "lib/billing/**" "totals done, specs red"   # where you are, for whoever comes next
+alock list                                                # everything held in this repository
+alock release-all                                         # when you are done
 ```
 
 A refusal tells you who and what, not just that you lost:
 
 ```bash
-$ alo acquire lib/billing/tax.rb
+$ alock acquire lib/billing/tax.rb
 REFUSED, do not write here
 HELD  lib/billing/**  by luke-backend  since 2026-09-09T21:04:11Z
       intent: rewriting the invoices
@@ -54,14 +54,14 @@ Exit 1 means do not write there. Exit 2 means the command could not run at all.
 
 ### Fan out to sub-agents in one worktree
 
-The orchestrator claims the area it hands out, running `alo` bare. Each sub-agent then claims its own part of it, naming itself on every call:
+The orchestrator claims the area it hands out, running `alock` bare. Each sub-agent then claims its own part of it, naming itself on every call:
 
 ```bash
-alo acquire "src/**" "fanning out the billing work"            # orchestrator
+alock acquire "src/**" "fanning out the billing work"            # orchestrator
 
-AGENT_ID=billing-a alo acquire "src/billing/**" "tax rounding"  # sub-agent A
-AGENT_ID=billing-b alo acquire "src/billing/tax.rb" "..."       # sub-agent B: REFUSED, held by billing-a
-AGENT_ID=billing-a alo release-all                              # A's own locks, never the orchestrator's
+AGENT_ID=billing-a alock acquire "src/billing/**" "tax rounding"  # sub-agent A
+AGENT_ID=billing-b alock acquire "src/billing/tax.rb" "..."       # sub-agent B: REFUSED, held by billing-a
+AGENT_ID=billing-a alock release-all                              # A's own locks, never the orchestrator's
 ```
 
 ```mermaid
@@ -87,9 +87,9 @@ sequenceDiagram
 
 Three things matter, and each one fails silently if skipped:
 
-1. **The name goes on every call.** Sub-agents run inside the parent's process and would sign every lock as the parent. Each call is also a fresh shell, so an `export AGENT_ID` from an earlier call is gone. `AGENT_ID=<name> alo whoami` shows the name a lock would be signed with.
+1. **The name goes on every call.** Sub-agents run inside the parent's process and would sign every lock as the parent. Each call is also a fresh shell, so an `export AGENT_ID` from an earlier call is gone. `AGENT_ID=<name> alock whoami` shows the name a lock would be signed with.
 
-1. **Run `alo` in the checkout being written**, with `cd` or `--dir`. A lock in another repository protects nothing.
+1. **Run `alock` in the checkout being written**, with `cd` or `--dir`. A lock in another repository protects nothing.
 
 1. **Sub-agents claim even inside the orchestrator's lock.** The orchestrator's lock keeps other sessions out; only a sub-agent's own claim keeps its siblings out.
 
@@ -98,10 +98,10 @@ Three things matter, and each one fails silently if skipped:
 The gem ships a skill that teaches an agent all of the above, so the rules reach the agents rather than living only in this README. Install it into the skills directory your agent reads:
 
 ```bash
-alo skill install                    # default: into ~/.agents/skills, for most agents
-alo skill install --for claude       # into ~/.claude/skills instead
-alo skill install --into some/path   # anywhere else, --for is ignored if both are given
-alo skill path                       # where the bundled copy is
+alock skill install                    # default: into ~/.agents/skills, for most agents
+alock skill install --for claude       # into ~/.claude/skills instead
+alock skill install --into some/path   # anywhere else, --for is ignored if both are given
+alock skill path                       # where the bundled copy is
 ```
 
 `install` refuses to overwrite a copy that differs (`--force` replaces it) and never touches a symlink, since a symlink is some other installer's.
@@ -122,11 +122,11 @@ Several agents may work in this checkout at once. Before creating or editing
 files, load the agent-lock skill and claim the narrowest scope that covers your
 writes:
 
-    alo acquire <scope> "<what you are doing>"
+    alock acquire <scope> "<what you are doing>"
 
 If it refuses, work somewhere else. A sub-agent prefixes every call with its
-own name: AGENT_ID=<sub-agent-name> alo acquire ... Release with
-`alo release-all` when you are done.
+own name: AGENT_ID=<sub-agent-name> alock acquire ... Release with
+`alock release-all` when you are done.
 ```
 
 Advisory locks work because everybody checks. That is why the rule belongs in the instructions your agents load, and not only here.
@@ -148,7 +148,7 @@ The fingerprint walks up from the current process until it finds an ancestor tha
 > [!NOTE]
 > The start time is in the hash on purpose. Pids get recycled, and a new session that lands on a dead one's number should not inherit its locks.
 
-`alo whoami` prints the name this session would sign a lock with, its parent, and where each came from. Run it before the first claim if in doubt.
+`alock whoami` prints the name this session would sign a lock with, its parent, and where each came from. Run it before the first claim if in doubt.
 
 ### Locks live inside `.git`
 
@@ -222,15 +222,15 @@ Claude Code runs sub-agents inside the parent's own `claude` process, and sets n
 So a sub-agent names itself, on every call, since each command runs in a fresh shell and an `export` does not survive to the next one:
 
 ```bash
-AGENT_ID=luke-backend alo whoami                        # id luke-backend, parent claude-1f4c8a02 (inferred)
-AGENT_ID=luke-backend alo acquire lib/billing/** "invoices"
-AGENT_ID=luke-backend alo release-all
+AGENT_ID=luke-backend alock whoami                        # id luke-backend, parent claude-1f4c8a02 (inferred)
+AGENT_ID=luke-backend alock acquire lib/billing/** "invoices"
+AGENT_ID=luke-backend alock release-all
 ```
 
-When `AGENT_ID` is set and `AGENT_PARENT_ID` is not, the parent is taken to be the session's own name, `CLAUDE_SESSION_ID` if the harness exports it and the fingerprint otherwise, which is the orchestrator running bare `alo`. Set `AGENT_PARENT_ID` explicitly when the parent named itself too.
+When `AGENT_ID` is set and `AGENT_PARENT_ID` is not, the parent is taken to be the session's own name, `CLAUDE_SESSION_ID` if the harness exports it and the fingerprint otherwise, which is the orchestrator running bare `alock`. Set `AGENT_PARENT_ID` explicitly when the parent named itself too.
 
 > [!NOTE]
-> The same rule applies in a terminal. Setting `AGENT_ID` there makes the terminal's own session your parent, so a bare `alo` typed in that terminal can release what you claimed under the name.
+> The same rule applies in a terminal. Setting `AGENT_ID` there makes the terminal's own session your parent, so a bare `alock` typed in that terminal can release what you claimed under the name.
 
 ### A crash does not strand the tree
 
@@ -242,10 +242,10 @@ A lock is cleared out of the way when its holder is provably gone: the process t
 | Notes        | Orphaned. The claim is void, the record survives |
 
 ```
-$ alo acquire workflow/**
+$ alock acquire workflow/**
 INTERRUPTED WORK on workflow/**, left by luke-backend
-  alo resume workflow/**   # take it back, notes and all
-  alo break workflow/**    # throw it away and start over
+  alock resume workflow/**   # take it back, notes and all
+  alock break workflow/**    # throw it away and start over
 ```
 
 > [!WARNING]
@@ -254,7 +254,7 @@ INTERRUPTED WORK on workflow/**, left by luke-backend
 A live holder's lock is never cleared, however old it is. An agent may legitimately work on one scope for hours, and deleting its lock underneath it would hand its files to the next agent while it is still writing them. Past the stale window `list`, `check` and `mine` tag it `STALE` instead, and taking it is a `break` that somebody announces first.
 
 ```
-$ alo list
+$ alock list
 Locks held (2):
 app/**	orchestrator	2026-09-11T16:04:56Z
   fanning out
@@ -299,11 +299,11 @@ Any command exits 2 when it cannot run at all: a scope that is empty or outside 
 ## Shell completion
 
 ```bash
-alo completion bash > "$(brew --prefix)/etc/bash_completion.d/alo"
-alo completion zsh  > "${fpath[1]}/_alo"
+alock completion bash > "$(brew --prefix)/etc/bash_completion.d/alo"
+alock completion zsh  > "${fpath[1]}/_alo"
 ```
 
-Names every command and flag `alo` currently knows, since the script is generated from the same registry the CLI runs, rather than hand-maintained separately from it.
+Names every command and flag `alock` currently knows, since the script is generated from the same registry the CLI runs, rather than hand-maintained separately from it.
 
 ## Configuration
 
@@ -323,8 +323,8 @@ Names every command and flag `alo` currently knows, since the script is generate
 Redis stores the same documents as the file store, and buys two things a filesystem cannot: its mutex holds across machines, and a TTL expires an abandoned lock without anybody having to reason about liveness. A tree defaults to Redis when one answers on `REDIS_URL`, and falls back to the file store, which needs nothing installed, when none does.
 
 ```bash
-AGENT_LOCK_BACKEND=redis alo acquire workflow/**   # force it, rather than autodetect
-AGENT_LOCK_BACKEND=file  alo acquire workflow/**   # or force the file store instead
+AGENT_LOCK_BACKEND=redis alock acquire workflow/**   # force it, rather than autodetect
+AGENT_LOCK_BACKEND=file  alock acquire workflow/**   # or force the file store instead
 ```
 
 Either way, every claim checks for conflicts and writes its lock while holding one mutex for the whole store. Refusing an atomic write of an identical scope is not enough on its own: `lib/**` and `lib/cli.rb` are different keys, and two agents claiming them at the same moment would both find the store empty and both win. The file store takes an exclusive `flock` on `.mutex` beside the locks. Redis takes `agent-lock-mutex:<tree digest>` with `SET NX PX` and a random token, and gives it back with a compare-and-delete script, so a process whose lease ran out cannot release somebody else's.
@@ -341,7 +341,7 @@ The `redis` gem ships as a dependency of this one now, since deciding the defaul
 `acquire --enforce` also runs `chflags uchg` on every matched file, which makes them unwritable by anything, whether it checks for locks or not.
 
 ```bash
-alo acquire "config/credentials/**" "keys must not move during the migration" --enforce
+alock acquire "config/credentials/**" "keys must not move during the migration" --enforce
 ```
 
 > [!WARNING]

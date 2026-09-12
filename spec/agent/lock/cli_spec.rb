@@ -239,11 +239,11 @@ RSpec.describe Agent::Lock::CLI do
 
       output, = Open3.capture2e(
         { "AGENT_ID" => "test-agent" },
-        RbConfig.ruby, "-I", File.join(root, "lib"), File.join(root, "exe", "alo"), "list",
+        RbConfig.ruby, "-I", File.join(root, "lib"), File.join(root, "exe", "alock"), "list",
         chdir: expand_path(".")
       )
 
-      expect(output.index("Interrupted (1):")).to be < output.index("alo resume docs/**")
+      expect(output.index("Interrupted (1):")).to be < output.index("alock resume docs/**")
     end
 
     it "says nothing is held when all that is left is interrupted work" do
@@ -305,17 +305,17 @@ RSpec.describe Agent::Lock::CLI do
   end
 
   # A hint is only worth printing if it can be pasted back. `agent-lock` said
-  # to somebody who typed `alo` may not be on their PATH at all, or may be a
+  # to somebody who typed `alock` may not be on their PATH at all, or may be a
   # different program of the same name that shadows this one.
   describe "the name it was run as" do
     it "puts it in the hints it prints" do
       plant("workflow/**", agent: "crashed-agent", status: Agent::Lock::Record::ORPHANED)
 
-      command = run_as("alo", "acquire workflow")
+      command = run_as("alock", "acquire workflow")
 
       aggregate_failures do
         expect(command).to have_exit_status(1)
-        expect(command.stderr).to include("alo resume workflow/**")
+        expect(command.stderr).to include("alock resume workflow/**")
         expect(command.stderr).not_to include("agent-lock")
       end
     end
@@ -323,11 +323,11 @@ RSpec.describe Agent::Lock::CLI do
     it "puts it in front of an error" do
       set_environment_variable("AGENT_LOCK_BACKEND", "carrier-pigeon")
 
-      command = run_as("alo", "list")
+      command = run_as("alock", "list")
 
       aggregate_failures do
         expect(command).to have_exit_status(2)
-        expect(command.stderr).to start_with("ERROR: alo: unknown backend")
+        expect(command.stderr).to start_with("ERROR: alock: unknown backend")
       end
     end
 
@@ -343,13 +343,13 @@ RSpec.describe Agent::Lock::CLI do
       root = File.expand_path("../../..", __dir__)
       _out, err, status = Open3.capture3(
         { "AGENT_LOCK_BACKEND" => "carrier-pigeon" },
-        RbConfig.ruby, "-I", File.join(root, "lib"), File.join(root, "exe", "alo"), "list",
+        RbConfig.ruby, "-I", File.join(root, "lib"), File.join(root, "exe", "alock"), "list",
         chdir: expand_path(".")
       )
 
       aggregate_failures do
         expect(status.exitstatus).to eq(2)
-        expect(err).to start_with("ERROR: alo: unknown backend")
+        expect(err).to start_with("ERROR: alock: unknown backend")
       end
     end
   end
@@ -405,7 +405,7 @@ RSpec.describe Agent::Lock::CLI do
 
         aggregate_failures do
           expect(command).to have_exit_status(0)
-          expect(command.output).to include("alo")
+          expect(command.output).to include("alock")
           Agent::Lock::CLI::COMMANDS.each_key do |name|
             expect(command.output).to include(name)
           end
@@ -414,7 +414,7 @@ RSpec.describe Agent::Lock::CLI do
     end
 
     it "writes through the launcher rather than to the process's own stdout" do
-      expect(agent_lock("completion zsh").output).to include("#compdef alo")
+      expect(agent_lock("completion zsh").output).to include("#compdef alock")
     end
 
     it "refuses a shell it cannot emit for" do
