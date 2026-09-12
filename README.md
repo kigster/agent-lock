@@ -2,7 +2,7 @@
 
 [![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml)
 
-Advisory file locks for coding agents that share a checkout.
+Advisory locks on files and folders with pluggable backends (redis and file-system provided out the box, with redis being the default if it's available locally). This locking tool is meant to be used by the coding agents that share a checkout.
 
 ## What it is
 
