@@ -15,7 +15,7 @@ RSpec.describe Agent::Lock::Store::RedisStore, type: :checkout do
   subject(:store) { described_class.new(tree, client: redis) }
 
   let(:url) { RedisHelpers::TEST_REDIS_URL }
-  let(:redis) { ::Redis.new(url: url) }
+  let(:redis) { Redis.new(url: url) }
   let(:identity) { Agent::Lock::Identity.new(env: { "AGENT_ID" => "luke-backend" }) }
   let(:scope) { Agent::Lock::Scope.parse("workflow/**", tree: tree) }
   let(:record) do
@@ -197,7 +197,7 @@ RSpec.describe Agent::Lock::Store::RedisStore, type: :checkout do
   # @return [Integer] the child's pid
   def fork_incrementer(counter, rounds:)
     fork do
-      mine = described_class.new(Agent::Lock::Tree.for(checkout), client: ::Redis.new(url: url))
+      mine = described_class.new(Agent::Lock::Tree.for(checkout), client: Redis.new(url: url))
       rounds.times do
         mine.synchronize do
           value = File.read(counter).to_i

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require_relative "manager"
-
 require "dry/cli"
 
 module Agent
@@ -10,19 +9,31 @@ module Agent
     # parse flags, call one Manager method, print the result, set an exit code.
     # No command decides anything a library object could decide instead.
     module CLI
+      # What the gem is installed as. Taken from the gemspec's one executable
+      # rather than from $PROGRAM_NAME, which under a test runner is the
+      # runner. The completion script it emits names the program in every
+      # line, so guessing it wrong is not a cosmetic mistake.
+      PROGRAM_NAME = "alo"
+
       # A registry whose commands are already bound to this launcher, so a
       # command writes to the streams it was given rather than to the process's.
       #
       # @param launcher [Launcher]
       # @return [Dry::CLI::Registry]
       def self.registry_for(launcher)
-        Class.new do
-          extend Dry::CLI::Registry
+        # `extend` and `register` have to be sent to the new class explicitly.
+        # Inside a `tap` block `self` is still this module, so writing them
+        # bare turned Agent::Lock::CLI itself into the registry, handed back a
+        # class that knew no commands, and left the completion command bound
+        # to that empty class.
+        registry = Class.new { extend Dry::CLI::Registry }
 
-          COMMANDS.each do |name, (klass, aliases)|
-            register name, klass.new(launcher), aliases: aliases
-          end
+        COMMANDS.each do |name, (klass, aliases)|
+          registry.register(name, klass.new(launcher), aliases: aliases)
         end
+
+        registry.register("completion", Commands::Completion[registry, program_name: PROGRAM_NAME])
+        registry
       end
 
       # The whole command line, in one place, so adding a verb is one line
@@ -44,6 +55,7 @@ require_relative "cli/commands/resume"
 require_relative "cli/commands/whoami"
 require_relative "cli/commands/skill"
 require_relative "cli/commands/version"
+require_relative "cli/commands/completion"
 
 module Agent
   module Lock

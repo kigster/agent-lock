@@ -50,7 +50,7 @@ module Agent
       #
       # @param argv [Array<String>]
       # @param program [String] e.g. `File.basename($PROGRAM_NAME)`
-      # rubocop:disable Metrics/ParameterLists
+      # rubocop:disable-next Metrics/ParameterLists
       def initialize(argv = ARGV,
                      stdin = $stdin,
                      stdout = $stdout,
@@ -66,12 +66,11 @@ module Agent
         self.pastel = pastel
         @program    = program
       end
-      # rubocop:enable Metrics/ParameterLists
 
       # @return [void] always exits, with 0 unless something said otherwise
-      # rubocop:disable Metrics/AbcSize
+      # rubocop:disable-next Metrics/AbcSize
       def execute!
-        backend_banner unless (%w[-h --help] & argv).empty?
+        backend_banner if %w[-h --help].intersect?(argv)
 
         code = 0
         Dry::CLI.new(CLI.registry_for(self)).call(arguments: argv, out: stdout, err: stderr)
@@ -88,7 +87,6 @@ module Agent
       ensure
         kernel.exit(exit_code || code)
       end
-      # rubocop:enable Metrics/AbcSize
 
       private
 
@@ -100,7 +98,7 @@ module Agent
       # a reader learns the shape of the choice before any subcommand's flags.
       #
       # @return [void]
-      # rubocop:disable Metrics/AbcSize
+      # rubocop:disable-next Metrics/AbcSize
       def backend_banner
         p(bold(yellow("Agent Lock, Version #{green(Agent::Lock::VERSION)}")))
         p
@@ -123,7 +121,6 @@ module Agent
         p("    'redis' or 'file' to override the default.")
         p
       end
-      # rubocop:enable Metrics/AbcSize
     end
   end
 end

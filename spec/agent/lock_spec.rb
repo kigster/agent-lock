@@ -2,6 +2,6 @@
 
 RSpec.describe Agent::Lock do
   it "has a version number" do
-    expect(Agent::Lock::VERSION).not_to be nil
+    expect(Agent::Lock::VERSION).not_to be_nil
   end
 end

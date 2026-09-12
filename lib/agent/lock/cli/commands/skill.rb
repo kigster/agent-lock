@@ -22,9 +22,12 @@ module Agent
         class SkillInstall < Base
           desc "Copy the skill this gem ships into a skills directory"
 
-          option :into, type: :string, default: nil, aliases: ["-o"], desc: "The skills directory, default ~/.agents/skills"
-          option :for, type: :string, default: nil, aliases: ["-a"], desc: "AI coding agent name, eg 'codex', or 'claude'"
-          option :force, type: :boolean, default: false, aliases: ["-f"], desc: "Replace a copy that differs from this one"
+          option :into, type: :string, default: nil, aliases: ["-o"],
+                        desc: "The skills directory, default ~/.agents/skills"
+          option :for, type: :string, default: nil, aliases: ["-a"],
+                       desc: "AI coding agent name, eg 'codex', or 'claude'"
+          option :force, type: :boolean, default: false, aliases: ["-f"],
+                         desc: "Replace a copy that differs from this one"
 
           example ["", "--into ~/.claude/skills", "--force"]
           example ["", "--for claude"]
@@ -49,7 +52,8 @@ module Agent
             warn_("Both --for and --into options are provided; --for will be ignored") if options[:into]
             return options[:into] if options[:into]
 
-            options[:for] == "claude" ? File.join(Dir.home, ".claude", "skills") : File.join(Dir.home, ".agents", "skills")
+            agent_dir = options[:for] == "claude" ? ".claude" : ".agents"
+            File.join(Dir.home, agent_dir, "skills")
           end
 
           # @param result [Skill::Result]

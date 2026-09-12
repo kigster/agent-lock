@@ -22,9 +22,9 @@ RSpec.shared_context "a checkout" do
 
   # @param id [String] the session this manager belongs to
   # @return [Agent::Lock::Manager]
-  def manager_for(id, parent: nil, **options)
+  def manager_for(id, parent: nil, **)
     env = { "AGENT_ID" => id }
     env["AGENT_PARENT_ID"] = parent if parent
-    Agent::Lock::Manager.new(tree: tree, identity: Agent::Lock::Identity.new(env: env), **options)
+    Agent::Lock::Manager.new(tree: tree, identity: Agent::Lock::Identity.new(env: env), **)
   end
 end

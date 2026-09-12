@@ -9,7 +9,7 @@
 RSpec.describe "loading a file on its own" do
   root = File.expand_path("../../../lib", __dir__)
 
-  Dir.glob(File.join(root, "agent", "lock", "**", "*.rb")).sort.each do |file|
+  Dir.glob(File.join(root, "agent", "lock", "**", "*.rb")).each do |file|
     feature = file.delete_prefix("#{root}/").delete_suffix(".rb")
 
     it "requires everything #{feature} uses" do

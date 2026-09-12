@@ -283,6 +283,7 @@ Only live claims are counted as held. `--json` gives every record its `status` a
 | `whoami`                   | The name this session signs locks with, and its parent | 0                                                      |
 | `skill install`            | Copy the bundled skill into a skills directory         | 1 if a different copy or a symlink is there            |
 | `skill path`               | Where the bundled skill is                             | 0                                                      |
+| `completion bash\|zsh`     | Print a shell completion script                        | 1 for any other shell                                  |
 
 Flags:
 
@@ -294,6 +295,15 @@ Flags:
 | `--force`    | `acquire`                         | Permit `--enforce` on a very wide scope |
 
 Any command exits 2 when it cannot run at all: a scope that is empty or outside the tree, a backend mismatch, or a store it cannot reach.
+
+## Shell completion
+
+```bash
+alo completion bash > "$(brew --prefix)/etc/bash_completion.d/alo"
+alo completion zsh  > "${fpath[1]}/_alo"
+```
+
+Names every command and flag `alo` currently knows, since the script is generated from the same registry the CLI runs, rather than hand-maintained separately from it.
 
 ## Configuration
 
@@ -343,12 +353,14 @@ alo acquire "config/credentials/**" "keys must not move during the migration" --
 
 ```bash
 bin/setup
-bundle exec rspec                              # 215 examples, against the file backend
+bundle exec rspec                              # 228 examples, against the file backend
 AGENT_LOCK_TEST_BACKEND=redis bundle exec rspec # the same suite, against Redis instead
 bundle exec rubocop
 ```
 
-The suite runs against one backend at a time, picked by `AGENT_LOCK_TEST_BACKEND` rather than the machine's own default, so it stays deterministic whether or not Redis happens to be running: only the examples that test one backend's own on-disk or on-Redis shape care which one that is, and a Redis run defaults to database 15 so it never touches whatever database a developer's own Redis work lives in. CI runs both.
+The suite runs against one backend at a time, picked by `AGENT_LOCK_TEST_BACKEND` rather than the machine's own default, so it stays deterministic whether or not Redis happens to be running: only the examples that test one backend's own on-disk or on-Redis shape care which one that is, and a Redis run defaults to database 15 so it never touches whatever database a developer's own Redis work lives in. CI runs both, plus rubocop as a third, independent job.
+
+A `justfile` covers the rest: `just test`, `just test-coverage`, `just ci` (rubocop then coverage), `just format` (autocorrect, then regenerate `.rubocop_todo.yml`), and `just publish`/`just release` for cutting a version. `just lint` currently names `standardrb`, which is not one of this gem's dependencies; use `bundle exec rubocop` until that recipe is reconciled with the rest of the project's tooling.
 
 The library decides and the CLI prints. Every verb is a method on `Manager` that returns a result and prints nothing, so the whole lifecycle can be tested without capturing output. `Launcher` takes `argv`, `stdin`, `stdout`, `stderr` and `kernel` as arguments, and nothing below it calls `puts` or a receiverless `exit`, which is what lets Aruba run the CLI end to end inside the test process instead of forking a Ruby per example.
 

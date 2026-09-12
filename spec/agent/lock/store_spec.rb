@@ -54,8 +54,10 @@ RSpec.describe Agent::Lock::Store, type: :checkout do
 
   describe ".claim" do
     it "records the proposed name on a virgin tree" do
-      expect(described_class.claim(tree, "redis")).to eq("redis")
-      expect(described_class.recorded(tree)).to eq("redis")
+      aggregate_failures do
+        expect(described_class.claim(tree, "redis")).to eq("redis")
+        expect(described_class.recorded(tree)).to eq("redis")
+      end
     end
 
     # The race this exists to close: two processes reach a virgin tree and
@@ -65,8 +67,10 @@ RSpec.describe Agent::Lock::Store, type: :checkout do
     it "hands back whatever a concurrent claim already wrote, not its own guess" do
       described_class.claim(tree, "redis")
 
-      expect(described_class.claim(tree, "file")).to eq("redis")
-      expect(described_class.recorded(tree)).to eq("redis")
+      aggregate_failures do
+        expect(described_class.claim(tree, "file")).to eq("redis")
+        expect(described_class.recorded(tree)).to eq("redis")
+      end
     end
   end
 

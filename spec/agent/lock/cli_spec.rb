@@ -395,6 +395,37 @@ RSpec.describe Agent::Lock::CLI do
     end
   end
 
+  # The registry is built per launcher, which is the part that broke: the
+  # completion command is handed the registry it is registered into, so a
+  # registry that never received the commands emits a script that knows none.
+  describe "completion" do
+    %w[bash zsh].each do |shell|
+      it "emits a #{shell} script naming this program and every command" do
+        command = agent_lock("completion #{shell}")
+
+        aggregate_failures do
+          expect(command).to have_exit_status(0)
+          expect(command.output).to include("alo")
+          Agent::Lock::CLI::COMMANDS.each_key do |name|
+            expect(command.output).to include(name)
+          end
+        end
+      end
+    end
+
+    it "writes through the launcher rather than to the process's own stdout" do
+      expect(agent_lock("completion zsh").output).to include("#compdef alo")
+    end
+
+    it "refuses a shell it cannot emit for" do
+      expect(agent_lock("completion fish")).not_to have_exit_status(0)
+    end
+
+    it "describes itself in the command list" do
+      expect(agent_lock("--help").output).to include("completion SHELL")
+    end
+  end
+
   describe "the things a CLI gets wrong" do
     # dry-cli calls `exit` directly for help, which would take the whole suite
     # down if the Launcher did not catch it.

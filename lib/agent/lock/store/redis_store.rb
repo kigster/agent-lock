@@ -115,8 +115,12 @@ module Agent
         # @return [Record, nil]
         def find(scope) = parse(client.get(key_for(Record.id_for(tree, scope))), nil)
 
+        # Named to match the Store interface FileSystemStore shares: an action
+        # with a boolean outcome, not a pure predicate.
+        #
         # @param record [Record]
         # @return [Boolean]
+        # rubocop:disable-next Naming/PredicateMethod
         def create(record)
           args = { nx: true }
           args[:ex] = ttl_seconds if ttl_seconds.positive?
@@ -175,6 +179,7 @@ module Agent
         #
         # @param token [String]
         # @return [Boolean] false when the mutex was no longer this holder's
+        # rubocop:disable-next Naming/PredicateMethod
         def release(token) = client.eval(RELEASE, keys: [mutex_key], argv: [token]) == 1
 
         # @return [Float] seconds to wait for the mutex before giving up
