@@ -1,6 +1,32 @@
 # frozen_string_literal: true
 
+# Things that happen to a holder after it took a lock, done to the lock in the
+# real store rather than by stubbing the clock or the process table, which
+# would test the stub.
+module HolderHistory
+  # @param manager [Agent::Lock::Manager] whose locks to rewrite
+  # @yieldparam record [Agent::Lock::Record]
+  # @yieldreturn [Agent::Lock::Record] what to store in its place
+  def rewrite(manager)
+    manager.store.all.select { |record| record.agent_id == manager.identity.id }.each do |record|
+      manager.store.update(yield(record))
+    end
+  end
+
+  # Every manager in one spec run shares the test process's session pid, so
+  # killing one holder means pointing its locks at a process that has exited.
+  #
+  # @param manager [Agent::Lock::Manager]
+  def kill(manager)
+    pid = Process.spawn("true")
+    Process.wait(pid)
+    rewrite(manager) { |record| record.with(pid: pid) }
+  end
+end
+
 RSpec.describe Agent::Lock::Manager, type: :checkout do
+  include HolderHistory
+
   subject(:luke) { manager_for("luke-backend") }
 
   let(:rey) { manager_for("rey-frontend") }
@@ -41,14 +67,156 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
       expect(luke.acquire("workflow/**").status).to eq(:already_mine)
     end
 
-    # A sub-agent is not a second agent. It works inside its parent's claim,
-    # and refusing it would make parallel work impossible for the one harness
-    # that most needs it.
-    it "lets a sub-agent write inside its parent's lock" do
+    it "is re-entrant for a narrower scope inside a lock it already holds" do
+      luke.acquire("workflow/**")
+
+      expect(luke.acquire("workflow/lib/cli.rb").status).to eq(:already_mine)
+    end
+
+    # Holding one file and asking for the whole tree used to answer ALREADY
+    # YOURS while writing nothing, so the rest of the tree stayed open to
+    # anybody and the asker believed it was not.
+    it "takes a wider scope for real when all it holds is a narrower one" do
+      luke.acquire("workflow/lib/cli.rb")
+
+      aggregate_failures do
+        expect(luke.acquire("workflow/**").status).to eq(:acquired)
+        expect(rey.acquire("workflow/docs/readme.md").status).to eq(:held)
+      end
+    end
+
+    # A sub-agent works inside its parent's claim, and refusing it would make
+    # parallel work impossible for the one harness that most needs it. It
+    # still records a claim of its own, or its siblings could not see it.
+    it "lets a sub-agent claim inside its parent's lock" do
       luke.acquire("workflow/**")
       sub = manager_for("subagent-4f2a", parent: "luke-backend")
 
-      expect(sub.acquire("workflow/lib/cli.rb").status).to eq(:already_mine).or eq(:acquired)
+      expect(sub.acquire("workflow/lib/cli.rb").status).to eq(:acquired)
+    end
+
+    it "takes the store's mutex for the scan and the write, and freezes outside it" do
+      inside = false
+      frozen_inside = nil
+      allow(luke.store).to receive(:synchronize).and_wrap_original do |original, &block|
+        original.call do
+          inside = true
+          block.call
+        ensure
+          inside = false
+        end
+      end
+      allow(Agent::Lock::Freeze).to receive(:apply) do
+        frozen_inside = inside
+        []
+      end
+
+      result = luke.acquire("workflow/**", enforce: true)
+
+      aggregate_failures do
+        expect(result.status).to eq(:acquired)
+        expect(luke.store).to have_received(:synchronize).once
+        expect(frozen_inside).to be(false)
+      end
+    end
+  end
+
+  # The documented orchestration pattern: a parent claims an umbrella and
+  # fans out, each sub-agent claims its own corner inside it. Before this
+  # worked, a child's claim inside its parent's lock recorded nothing, so two
+  # siblings both "acquired" one file, and a child's release-all took its
+  # parent's umbrella with it.
+  describe "a family working in one tree" do
+    let(:orchestrator) { manager_for("orchestrator") }
+    let(:alpha) { manager_for("alpha", parent: "orchestrator") }
+    let(:beta) { manager_for("beta", parent: "orchestrator") }
+    let(:file) { "workflow/lib/cli.rb" }
+
+    before { orchestrator.acquire("workflow/**", intent: "fanning out") }
+
+    it "records a child's claim under the child's own name" do
+      result = alpha.acquire(file, intent: "the CLI")
+
+      aggregate_failures do
+        expect(result.status).to eq(:acquired)
+        expect(result.record.agent_id).to eq("alpha")
+        expect(result.record.parent_agent_id).to eq("orchestrator")
+      end
+    end
+
+    it "refuses a sibling the file its sibling claimed" do
+      alpha.acquire(file, intent: "the CLI")
+
+      result = beta.acquire(file)
+
+      aggregate_failures do
+        expect(result.status).to eq(:held)
+        expect(result.code).to eq(1)
+        expect(result.record.agent_id).to eq("alpha")
+      end
+    end
+
+    it "is re-entrant for the child's own claim" do
+      alpha.acquire(file)
+
+      expect(alpha.acquire(file).status).to eq(:already_mine)
+    end
+
+    # Records are keyed by tree and scope, so the child cannot hold a second
+    # record on the one its parent holds. Letting it through with nothing
+    # written down is the bug; refusing fails closed.
+    it "refuses a child its parent's exact scope, and names the parent" do
+      result = alpha.acquire("workflow/**")
+
+      aggregate_failures do
+        expect(result.status).to eq(:parent_scope)
+        expect(result.code).to eq(1)
+        expect(result.records.map(&:agent_id)).to eq(["orchestrator"])
+      end
+    end
+
+    it "leaves the parent's lock standing after a child's release-all" do
+      alpha.acquire(file)
+
+      aggregate_failures do
+        expect(alpha.release_all.records.map(&:agent_id)).to eq(["alpha"])
+        expect(orchestrator.mine.records.map(&:scope)).to eq(["workflow/**"])
+      end
+    end
+
+    it "does not count the parent's lock among the child's" do
+      aggregate_failures do
+        expect(alpha.mine.records).to be_empty
+        expect(alpha.release("workflow/**").status).to eq(:refused)
+        expect(alpha.note("workflow/**", "not mine to write in").status).to eq(:refused)
+      end
+    end
+
+    it "tells a child it is free to claim inside its parent's lock" do
+      expect(alpha.check(file).status).to eq(:free)
+    end
+
+    it "still lets the parent sweep up after its children" do
+      alpha.acquire(file)
+
+      expect(orchestrator.release_all.records.map(&:agent_id)).to contain_exactly("orchestrator", "alpha")
+    end
+
+    # What a Claude Code sub-agent actually has: its own AGENT_ID and the
+    # parent's process. No AGENT_PARENT_ID, since nothing sets one.
+    context "when the parent is the session's fingerprint and the children only name themselves" do
+      let(:orchestrator) { Agent::Lock::Manager.new(tree: tree, identity: Agent::Lock::Identity.new(env: {})) }
+      let(:alpha) { manager_for("alpha") }
+      let(:beta) { manager_for("beta") }
+
+      it "keeps the siblings apart all the same" do
+        aggregate_failures do
+          expect(alpha.acquire(file).status).to eq(:acquired)
+          expect(beta.acquire(file).status).to eq(:held)
+          expect(alpha.release_all.records.map(&:agent_id)).to eq(["alpha"])
+          expect(orchestrator.mine.records.map(&:scope)).to eq(["workflow/**"])
+        end
+      end
     end
   end
 
@@ -117,16 +285,18 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
   end
 
   describe "reaping" do
+    let(:three_hours_ago) { (Time.now.utc - (3 * 3600)).iso8601 }
+
     # The case that matters: a session killed mid-run leaves a lock nobody can
     # release, and the next agent has to be able to tell that from a lock whose
     # holder is still working.
-    it "clears a lock whose holder is long gone and nobody has touched" do
+    it "clears a lock whose holder is gone" do
       rey.acquire("workflow/**")
-      impatient = manager_for("luke-backend", stale_minutes: 0)
+      kill(rey)
 
       aggregate_failures do
-        expect(impatient.reap.map(&:scope)).to eq(["workflow/**"])
-        expect(impatient.acquire("workflow/**").status).to eq(:acquired)
+        expect(luke.reap.map(&:scope)).to eq(["workflow/**"])
+        expect(luke.acquire("workflow/**").status).to eq(:acquired)
       end
     end
 
@@ -135,6 +305,72 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
 
       expect(luke.reap).to be_empty
     end
+
+    # A long refactor is not a crash. Reaping by age used to take the lock
+    # from under a session still working in there, and the next agent walked
+    # straight in. Age is reported instead, and breaking it stays a decision
+    # somebody announces.
+    it "never reaps a live holder's lock, however old, but reports it stale" do
+      rey.acquire("workflow/**")
+      rewrite(rey) { |record| record.with(created_at: three_hours_ago) }
+
+      aggregate_failures do
+        expect(luke.reap).to be_empty
+        expect(luke.acquire("workflow/lib/cli.rb").status).to eq(:held)
+        expect(luke.list.record.stale?(luke.stale_minutes)).to be(true)
+      end
+    end
+
+    # A lock written on another machine, through a synced or shared store,
+    # has a holder nobody here can ask about. Time is all there is, measured
+    # from the last thing it wrote, so its notes keep it alive.
+    context "when the holder is on another host" do
+      before do
+        rey.acquire("workflow/**")
+        rewrite(rey) { |record| record.with(host: "elsewhere.example", created_at: three_hours_ago) }
+      end
+
+      it "expires once nobody has touched it for longer than the window" do
+        expect(luke.reap.map(&:scope)).to eq(["workflow/**"])
+      end
+
+      it "does not expire while its holder keeps writing notes" do
+        rey.note("workflow/**", "still going")
+
+        aggregate_failures do
+          expect(luke.reap).to be_empty
+          expect(luke.acquire("workflow/lib/cli.rb").status).to eq(:held)
+        end
+      end
+    end
+  end
+
+  # #list and #mine used to read the store straight through, so a lock whose
+  # holder had already died still came back as held until some other command
+  # happened to reap it first.
+  describe "reaping before reporting" do
+    it "#list does not report a dead holder's notes-free lock as still held" do
+      rey.acquire("workflow/**")
+      kill(rey)
+
+      expect(luke.list.records).to be_empty
+    end
+
+    it "#list reports a dead holder's lock with notes as interrupted, not held" do
+      rey.acquire("workflow/**")
+      rey.note("workflow/**", "halfway")
+      kill(rey)
+
+      record = luke.list.records.find { |r| r.scope == "workflow/**" }
+      expect(record.status).to eq(Agent::Lock::Record::ORPHANED)
+    end
+
+    it "#mine does not report this session's own dead lock as still held" do
+      luke.acquire("workflow/**")
+      kill(luke)
+
+      expect(luke.mine.records).to be_empty
+    end
   end
 
   describe "the store the locks live in" do
@@ -142,14 +378,18 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
       expect(tree.store_dir).to eq(File.join(checkout, ".git", "agent-locks"))
     end
 
+    # A human-readable file on disk is what the file store is for; asserted
+    # regardless of AGENT_LOCK_TEST_BACKEND, since Redis has no such file.
     it "writes a lock a person can read" do
-      luke.acquire("workflow/**", intent: "rewriting the installer")
+      with_env("AGENT_LOCK_BACKEND" => "file") do
+        luke.acquire("workflow/**", intent: "rewriting the installer")
 
-      text = Dir[File.join(tree.store_dir, "*.lock.md")].map { |f| File.read(f) }.first
+        text = Dir[File.join(tree.store_dir, "*.lock.md")].map { |f| File.read(f) }.first
 
-      aggregate_failures do
-        expect(text).to include("agent_id: luke-backend")
-        expect(text).to include("rewriting the installer")
+        aggregate_failures do
+          expect(text).to include("agent_id: luke-backend")
+          expect(text).to include("rewriting the installer")
+        end
       end
     end
   end
@@ -194,16 +434,22 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
     end
   end
 end
+
 RSpec.describe "surviving a restart", type: :checkout do
+  include HolderHistory
+
   subject(:luke) { manager_for("luke-backend") }
 
-  let(:impatient) { manager_for("rey-frontend", stale_minutes: 0) }
+  # Death, not age, is what reaps a lock on this host. Luke dies in each
+  # example before anybody looks.
+  let(:successor) { manager_for("rey-frontend") }
 
   it "keeps the notes of a session that died, rather than reaping them" do
     luke.acquire("workflow/**", intent: "rewriting the installer")
     luke.note("workflow/**", "installer rewritten, specs still red")
 
-    impatient.reap
+    kill(luke)
+    successor.reap
     record = Agent::Lock::Manager.new(tree: tree, identity: luke.identity).list.record
 
     aggregate_failures do
@@ -215,17 +461,19 @@ RSpec.describe "surviving a restart", type: :checkout do
   it "deletes a lock that recorded nothing, since there is nothing to come back to" do
     luke.acquire("workflow/**", intent: "rewriting the installer")
 
-    impatient.reap
+    kill(luke)
+    successor.reap
 
-    expect(impatient.list.records).to be_empty
+    expect(successor.list.records).to be_empty
   end
 
   it "points the next agent at the interrupted work rather than overwriting it" do
     luke.acquire("workflow/**")
     luke.note("workflow/**", "halfway")
-    impatient.reap
+    kill(luke)
+    successor.reap
 
-    result = impatient.acquire("workflow/**")
+    result = successor.acquire("workflow/**")
 
     aggregate_failures do
       expect(result.status).to eq(:interrupted)
@@ -239,24 +487,27 @@ RSpec.describe "surviving a restart", type: :checkout do
   it "does not block work elsewhere in the tree" do
     luke.acquire("workflow/**")
     luke.note("workflow/**", "halfway")
-    impatient.reap
+    kill(luke)
+    successor.reap
 
-    expect(impatient.acquire("docs/**").status).to eq(:acquired)
+    expect(successor.acquire("docs/**").status).to eq(:acquired)
   end
 
   it "can be thrown away by whoever decides it is not worth resuming" do
     luke.acquire("workflow/**")
     luke.note("workflow/**", "halfway")
-    impatient.reap
-    impatient.break_lock("workflow/**")
+    kill(luke)
+    successor.reap
+    successor.break_lock("workflow/**")
 
-    expect(impatient.acquire("workflow/**").status).to eq(:acquired)
+    expect(successor.acquire("workflow/**").status).to eq(:acquired)
   end
 
   it "hands the work back, notes and all, to whoever resumes it" do
     luke.acquire("workflow/**", intent: "rewriting the installer")
     luke.note("workflow/**", "installer rewritten, specs still red")
-    impatient.reap
+    kill(luke)
+    successor.reap
 
     # A new session: after a reboot the pid is different and so is the
     # fingerprint, so resuming cannot depend on being recognised.

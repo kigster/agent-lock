@@ -4,4 +4,6 @@
 # The short name, for the times you are typing it twenty times an hour.
 require "agent/lock"
 
-Agent::Lock::Launcher.new(ARGV).execute!
+# The name is passed in, not read inside the gem, so that every hint the CLI
+# prints tells the user to type what they actually typed.
+Agent::Lock::Launcher.new(ARGV, program: File.basename($PROGRAM_NAME)).execute!

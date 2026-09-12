@@ -17,21 +17,37 @@ module Agent
 
           example ["workflow/**", "lib/agent/lock/cli.rb --json"]
 
+          # @param scope [String]
+          # @param options [Hash]
+          # @return [Manager::Result]
           def call(scope:, **options)
-            result = manager(options[:dir]).check(scope)
+            manager = manager(options[:dir])
+            result = manager.check(scope)
+            report(result, scope, json: options[:json], stale_minutes: manager.stale_minutes)
+            finish(result)
+          end
 
+          private
+
+          # @param result [Manager::Result]
+          # @param scope [String] as the user typed it
+          # @param json [Boolean]
+          # @param stale_minutes [Integer]
+          def report(result, scope, json:, stale_minutes:)
             case result.status
-            when :free then say(options[:json] ? "[]" : "FREE #{scope}")
+            when :free then say(json ? "[]" : "FREE #{scope}")
             when :mine
               # Held, but by you: safe to write, and worth saying which of your
               # own locks covers it rather than a bare "free".
-              report_records(result.records, json: options[:json])
-              say("YOURS #{result.record.scope}") unless options[:json]
+              report_records(result.records, json: json, stale_minutes: stale_minutes)
+              say("YOURS #{result.record.scope}") unless json
             when :held
-              options[:json] ? report_records(result.records, json: true) : report_held(result.records)
+              if json
+                report_records(result.records, json: true, stale_minutes: stale_minutes)
+              else
+                report_held(result.records, stale_minutes: stale_minutes)
+              end
             end
-
-            finish(result)
           end
         end
       end

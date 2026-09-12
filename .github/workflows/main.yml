@@ -11,13 +11,28 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-    name: Ruby ${{ matrix.ruby }}
+    name: Ruby ${{ matrix.ruby }}, ${{ matrix.backend }} backend
     strategy:
+      fail-fast: false
       matrix:
         ruby:
           - '4.0.6'
+        backend:
+          - file
+          - redis
+
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v6
@@ -28,5 +43,22 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - name: Run the default task
-        run: bundle exec rake
+      - name: Run the specs against the ${{ matrix.backend }} backend
+        env:
+          AGENT_LOCK_TEST_BACKEND: ${{ matrix.backend }}
+        run: bundle exec rspec
+
+  lint:
+    runs-on: ubuntu-latest
+    name: Rubocop
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0.6'
+          bundler-cache: true
+      - name: Run rubocop
+        run: bundle exec rubocop

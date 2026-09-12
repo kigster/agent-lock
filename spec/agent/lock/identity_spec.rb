@@ -38,9 +38,60 @@ RSpec.describe Agent::Lock::Identity do
     end
   end
 
-  it "reports the parent a sub-agent was spawned by" do
-    identity = described_class.new(env: { "AGENT_ID" => "sub", "AGENT_PARENT_ID" => "parent" })
+  describe "#source" do
+    it "is explicit for AGENT_ID" do
+      expect(described_class.new(env: { "AGENT_ID" => "named" }).source).to eq(:explicit)
+    end
 
-    expect(identity.parent_id).to eq("parent")
+    it "is the session for CLAUDE_SESSION_ID alone" do
+      expect(described_class.new(env: { "CLAUDE_SESSION_ID" => "abcdefgh" }).source).to eq(:session)
+    end
+
+    it "is the fingerprint when neither is set" do
+      expect(described_class.new(env: {}).source).to eq(:fingerprint)
+    end
+  end
+
+  describe "the parent" do
+    subject(:identity) { described_class.new(env: env) }
+
+    let(:fingerprint) { described_class.new(env: {}).id }
+
+    context "when a harness declares it" do
+      let(:env) { { "AGENT_ID" => "sub", "AGENT_PARENT_ID" => "parent" } }
+
+      its(:parent_id) { is_expected.to eq("parent") }
+      its(:parent_source) { is_expected.to eq(:explicit) }
+    end
+
+    # Claude Code runs a sub-agent inside its parent's process and tells it
+    # nothing, so a sub-agent's one distinguishing mark is the AGENT_ID it
+    # was told to use. The session it runs in is, by elimination, its parent.
+    context "when a sub-agent names itself and nothing else" do
+      let(:env) { { "AGENT_ID" => "sub" } }
+
+      its(:parent_id) { is_expected.to eq(fingerprint) }
+      its(:parent_source) { is_expected.to eq(:inferred) }
+    end
+
+    context "when the session a sub-agent runs in has a session id" do
+      let(:env) { { "AGENT_ID" => "sub", "CLAUDE_SESSION_ID" => "01Tms9skZQfGQs4y" } }
+
+      its(:parent_id) { is_expected.to eq("session-01Tms9sk") }
+    end
+
+    context "when AGENT_ID is the session's own fingerprint" do
+      let(:env) { { "AGENT_ID" => fingerprint } }
+
+      its(:parent_id) { is_expected.to be_nil }
+      its(:parent_source) { is_expected.to be_nil }
+    end
+
+    context "when nothing is named at all" do
+      let(:env) { {} }
+
+      its(:parent_id) { is_expected.to be_nil }
+      its(:parent_source) { is_expected.to be_nil }
+    end
   end
 end
