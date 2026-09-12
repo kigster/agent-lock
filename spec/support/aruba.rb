@@ -58,13 +58,13 @@ RSpec.shared_context "a CLI" do
     last_command_started
   end
 
-  # The CLI as `exe/alo` starts it, under a name of its own.
+  # The CLI as `exe/alock` starts it, under a name of its own.
   #
   # Aruba builds its main class with five positional arguments and no way to
   # add a sixth, so the name goes into a one-off subclass instead. The config
   # is this example's own copy, so the swap cannot leak into the next one.
   #
-  # @param program [String] what the user typed, e.g. "alo"
+  # @param program [String] what the user typed, e.g. "alock"
   # @param line [String] everything after the program name
   # @return [Aruba::Processes::InProcess]
   def run_as(program, line)

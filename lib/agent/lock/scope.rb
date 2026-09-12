@@ -38,7 +38,7 @@ module Agent
       class << self
         # What the user typed, as a pattern relative to the tree root.
         #
-        # An empty scope used to mean the whole tree, so `alo acquire "$SCOPE"`
+        # An empty scope used to mean the whole tree, so `alock acquire "$SCOPE"`
         # with the variable unset claimed everything, and nobody asked for
         # that. Globs used to skip the tree entirely, so `../x/**` was stored
         # verbatim and `/abs/tree/lib/**` never met `lib/**`. Both are read

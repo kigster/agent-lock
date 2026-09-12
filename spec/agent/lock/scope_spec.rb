@@ -38,7 +38,7 @@ RSpec.describe Agent::Lock::Scope, type: :checkout do
       expect(described_class::Invalid).to be < Agent::Lock::Error
     end
 
-    # `alo acquire "$SCOPE"` with SCOPE unset used to claim the whole tree.
+    # `alock acquire "$SCOPE"` with SCOPE unset used to claim the whole tree.
     it "refuses an empty scope rather than read it as the whole tree" do
       expect { parse[""] }
         .to raise_error(described_class::Invalid, "empty scope: pass ** to claim the whole tree")

@@ -13,7 +13,7 @@ module Agent
         # AGENT_ID it was told to use tells the two apart. A typo or a missing
         # export puts its locks down under somebody else's name, where they
         # block no sibling, and nothing says so. This is the check to run
-        # before the first claim: `AGENT_ID=rey-frontend alo whoami`.
+        # before the first claim: `AGENT_ID=rey-frontend alock whoami`.
         #
         # It reads the environment and nothing else. No tree and no store, so
         # asking the question can neither fail outside a checkout nor leave a

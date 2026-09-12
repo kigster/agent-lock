@@ -120,7 +120,7 @@ module Agent
 
         # Polls with a non-blocking flock rather than blocking on it, because
         # a blocking flock cannot be given up on: an agent stuck behind a
-        # stopped `alo` would wait forever with nothing on its screen.
+        # stopped `alock` would wait forever with nothing on its screen.
         #
         # @param file [File] the open mutex
         # @return [void]
