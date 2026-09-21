@@ -8,11 +8,17 @@ Gem::Specification.new do |spec|
   spec.authors = ["Konstantin Gredeskoul"]
   spec.email = ["kigster@gmail.com"]
 
-  spec.summary = "Advisory locks for the several coding agents that end up in one checkout"
-  spec.description = "A CLI an agent runs before it writes: claim a path or a glob, see who holds one, " \
-                     "record progress inside the lock, and pick the work back up after a crash. Identity " \
-                     "belongs to the session rather than the process, so a lock taken by one command can be " \
-                     "released by the next."
+  spec.summary = "Advisory locks to prevent race conditions and general mayhem " \
+    "when multiple AI agents unknowinly modify the same souce three."
+
+  spec.description = "This compact ruby gem is purely CI utility: it's meant to be used with the team of AI agents" \
+    "executing along the plan you approved. Using worktrees and parallelism it's easy to 10x the speed of "\
+    "develpoment of software even compared to a single agent working on it. Plus each agent can specialize. "\
+    "With that, these agents need a shared locking mechanism to ensure they are not working on the same directory, "\
+    "same worktree, and soon. This gem is exaclty that tool. The gem distributed as 'agent-lock', and offers the "\
+    "shortened binary called 'alock' (although 'agent-lock' works as well). The best way to understand the gem "\
+    "is to install and run it with 'alock --help'. Furthermore, each subcommand has an additional help." 
+
   spec.homepage = "https://github.com/kigster/agent-lock"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2.0"
@@ -29,7 +35,7 @@ Gem::Specification.new do |spec|
   spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
     ls.readlines("\x0", chomp: true).reject do |f|
       (f == gemspec) ||
-        f.start_with?(*%w[bin/ Gemfile .gitignore .rspec spec/ .github/ .rubocop.yml .plans/])
+        f.start_with?(*%w[bin/ Gemfile .gitignore .rspec spec/ .github/ .rubocop.yml .rubocop_todo.yml .plans .envrc justfile/])
     end
   end
   spec.bindir = "exe"
@@ -38,7 +44,9 @@ Gem::Specification.new do |spec|
 
   # Uncomment to register a new dependency of your gem
   spec.add_dependency "dry-cli", "~> 1.4"
-  spec.add_dependency "dry-cli-autocomplete", "~> 0.1"
+  spec.add_dependency "dry-cli-autocomplete", "~> 0.5"
+  spec.add_dependency "dry-cli-help", "~> 0.5"
+  spec.add_dependency "dry-cli-ui", "~> 0.5"
   spec.add_dependency "pastel", "~> 0.8"
   spec.add_dependency "redis", "~> 5.0"
 
