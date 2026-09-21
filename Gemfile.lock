@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    agent-lock (2.0.0)
+    agent-lock (2.0.1)
       dry-cli (~> 1.4)
       dry-cli-autocomplete (~> 0.5)
       dry-cli-help (~> 0.5)
@@ -215,7 +215,7 @@ DEPENDENCIES
   simplecov
 
 CHECKSUMS
-  agent-lock (2.0.0)
+  agent-lock (2.0.1)
   aruba (2.4.1) sha256=c6821949136bd9c953b3cf553971c4780faa26bb40082ac5ce631c541e0caf0d
   ast (2.4.3) sha256=954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383
   base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b

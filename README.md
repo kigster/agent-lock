@@ -1,8 +1,17 @@
-# Agent::Lock (v0.2.0)
+# Agent::Lock (v2.0.1)
 
 [![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml)
 
 Advisory locks on files and folders with pluggable backends (redis and file-system provided out the box, with redis being the default if it's available locally). This locking tool is meant to be used by the coding agents that share a checkout.
+
+> [!NOTE]
+>
+> Please note that `agent-lock` is part of a three-part system: 
+>
+> 1. `agentilda` is the Ruby Gem, which is a CLI tool that creates and manages the `.plans` folder, and comes with eight or so specialized agents that take a spec.md file and work through it until it's a set of PRs open, reviewed, and passing on your CI. It does not automatically merge anything.
+> 2. [`agentilda-ai-setup`](https://kigster/agentilda-ai-setup) is the GitHub repo that's a mixture of BASH and Ruby installers. It's comes with the [`configuration.yml`](https://github.com/kigster/agentilda-ai-setup/blob/main/configuration.example.yml) file, which lists the installation commands for the coding agents you'd like to install locally, any other executables you might want (for instance, it installs `bt` — braintrust's CLI utility), and then you can list any number of Github Repos and use them to install skills, plugins, commands from them, specifying exactly which you want to install and which you want to exclude. Moreover you can specify a sub-directory of a github repo to install from.
+>
+> Together, the three repos, after installation provide you with the consistent way to replicate your `~/.agents` and `~/.claude` folders on multiple computers, and to also replicate a consistent agentic software team workflow across many projects.
 
 ## What it is
 

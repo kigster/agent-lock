@@ -2,6 +2,7 @@
 
 require_relative "lib/agent/lock/version"
 
+# rubocop: disable-next Layout/LineLength
 Gem::Specification.new do |spec|
   spec.name = "agent-lock"
   spec.version = Agent::Lock::VERSION
@@ -9,15 +10,20 @@ Gem::Specification.new do |spec|
   spec.email = ["kigster@gmail.com"]
 
   spec.summary = "Advisory locks to prevent race conditions and general mayhem " \
-    "when multiple AI agents unknowinly modify the same souce three."
+                 "when multiple AI agents unknowinly modify the same souce three."
 
-  spec.description = "This compact ruby gem is purely CI utility: it's meant to be used with the team of AI agents" \
-    "executing along the plan you approved. Using worktrees and parallelism it's easy to 10x the speed of "\
-    "develpoment of software even compared to a single agent working on it. Plus each agent can specialize. "\
-    "With that, these agents need a shared locking mechanism to ensure they are not working on the same directory, "\
-    "same worktree, and soon. This gem is exaclty that tool. The gem distributed as 'agent-lock', and offers the "\
-    "shortened binary called 'alock' (although 'agent-lock' works as well). The best way to understand the gem "\
-    "is to install and run it with 'alock --help'. Furthermore, each subcommand has an additional help." 
+  spec.description = "This compact ruby gem is purely CLI utility: it's meant to be used by a team of AI agents" \
+                     "executing along one or more the plans in a given repo. Using worktrees and parallelism it's easy to 10x the speed of " \
+                     "develpoment of software development compared to even a single agent working on it. Plus each agent can specialize. " \
+                     "Such agents require globsl shared locking mechanism to ensure they are not working on the same directory, " \
+                     "or the same files in same worktree. That is exactly what this gem does. The CLI binary you invoke is called 'alock'" \
+                     "which comes with sub-command 'completion' which you can load for BASH or ZSH. However, you are not very likely going to" \
+                     "invoke this gem directly. It's used by an Agentic Workflow gem 'agentilda' to protect shared resources. " \
+                     "To try the entire system, it's recommended to download the repo https://github.com/kigster/agentilda-ai-setup " \
+                     "which both installs the two gems, and offers a configuration file that installs a set of coding agents, skills, plugins, " \
+                     "commands, from various guthub folders, or via running commands, and so on. In other words the repo's purpose is to ensure " \
+                     "your agentic setup is identical from machine to machine, and by modifying the config file you can pick and choose your " \
+                     "skills, your AGENT.md/CLAUDE.md file and so on."
 
   spec.homepage = "https://github.com/kigster/agent-lock"
   spec.license = "MIT"
@@ -35,7 +41,8 @@ Gem::Specification.new do |spec|
   spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
     ls.readlines("\x0", chomp: true).reject do |f|
       (f == gemspec) ||
-        f.start_with?(*%w[bin/ Gemfile .gitignore .rspec spec/ .github/ .rubocop.yml .rubocop_todo.yml .plans .envrc justfile/])
+        f.start_with?(*%w[bin/ Gemfile .gitignore .rspec spec/ .github/ .rubocop.yml .rubocop_todo.yml .plans .envrc
+                          justfile/])
     end
   end
   spec.bindir = "exe"
