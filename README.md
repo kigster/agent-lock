@@ -325,11 +325,13 @@ Names every command and flag `alock` currently knows, since the script is genera
 | `AGENT_LOCK_MUTEX_TIMEOUT` | `15`                                    | Seconds a claim waits for the store's mutex before giving up with exit 2 |
 | `AGENT_LOCK_BACKEND`       | `redis` if one answers, else `file`     | `file` or `redis`                                                        |
 | `AGENT_LOCK_TTL_SECONDS`   | `0`                                     | Redis expiry. `0` means no TTL                                           |
-| `REDIS_URL`                | `redis://127.0.0.1:6379/0`              | Where Redis is                                                           |
+| `REDIS_URL`                | unset                                   | A shared Redis, tried before `redis://127.0.0.1:6379/0`                  |
 
 ## Backends
 
-Redis stores the same documents as the file store, and buys two things a filesystem cannot: its mutex holds across machines, and a TTL expires an abandoned lock without anybody having to reason about liveness. A tree defaults to Redis when one answers on `REDIS_URL`, and falls back to the file store, which needs nothing installed, when none does.
+Redis stores the same documents as the file store, and buys two things a filesystem cannot: its mutex holds across machines, and a TTL expires an abandoned lock without anybody having to reason about liveness. A tree defaults to Redis when one answers, and falls back to the file store, which needs nothing installed, when none does.
+
+The search for a Redis runs in a fixed order: `REDIS_URL` first, when it is set, then `redis://127.0.0.1:6379/0`. A `REDIS_URL` nobody answers on is not the end of it, since the usual reason to set one is a shared instance that is occasionally down, and a local Redis is still a better lock store than the filesystem. Only when neither answers does the tree land on the file store. `alock list` names the store in use, so it is never a guess which one you are on.
 
 ```bash
 AGENT_LOCK_BACKEND=redis alock acquire workflow/**   # force it, rather than autodetect

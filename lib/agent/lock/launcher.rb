@@ -70,8 +70,6 @@ module Agent
       # @return [void] always exits, with 0 unless something said otherwise
       # rubocop:disable-next Metrics/AbcSize
       def execute!
-        backend_banner if %w[-h --help].intersect?(argv)
-
         code = 0
         Dry::CLI.new(CLI.registry_for(self)).call(arguments: argv, out: stdout, err: stderr)
       rescue SystemExit => e
@@ -92,34 +90,6 @@ module Agent
 
       def p(msg = "")
         stdout.puts(msg)
-      end
-
-      # The two backends, ahead of dry-cli's own `--help` for each command, so
-      # a reader learns the shape of the choice before any subcommand's flags.
-      #
-      # @return [void]
-      # rubocop:disable-next Metrics/AbcSize
-      def backend_banner
-        p(bold(yellow("Agent Lock, Version #{green(Agent::Lock::VERSION)}")))
-        p
-        p(bold(blue("Usage:")))
-        p("    alock [command [ subcommand ]] [options]")
-        p
-        p(bold(blue("Description:")))
-        p("    This is a CLI utility aimed at the agents working concurrently in the same")
-        p("    environment, sharing filesystem, worktrees, etc. Agent Lock allows fine-grained")
-        p("    and effective locking, and can use multiple backends to store and maintain locks.")
-        p
-        p(cyan("    • Redis-Based Locking"))
-        p("      This mechanism uses locally running Redis instance to coordinate access to shared")
-        p("      resources (default, if Redis is available and accessible).")
-        p
-        p(cyan("    • File System Locking"))
-        p("      This mechanism uses file system locks to coordinate access to shared resources.")
-        p
-        p("    You can set the environment variable #{yellow("AGENT_LOCK_BACKEND")} to either")
-        p("    'redis' or 'file' to override the default.")
-        p
       end
     end
   end

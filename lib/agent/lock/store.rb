@@ -12,7 +12,8 @@ module Agent
     #
     # AGENT_LOCK_BACKEND wins when set. Otherwise a tree that already has a
     # marker keeps using it. A virgin tree defaults to Redis when one answers
-    # locally, file when none does.
+    # on REDIS_URL or, failing that, on the local default; file when neither
+    # does.
     #
     # That default is still never a runtime auto-*switch*: once a marker
     # exists, every later process in that tree is bound to it regardless of
@@ -90,7 +91,8 @@ module Agent
 
       def marker_path(tree) = File.join(tree.store_dir, MARKER)
 
-      # @return [String] "redis" when one answers on REDIS_URL, "file" otherwise
+      # @return [String] "redis" when one answers on REDIS_URL or, failing
+      #   that, on RedisStore::LOCAL_URL; "file" when neither does
       def default_backend
         local_redis_available? ? "redis" : "file"
       end

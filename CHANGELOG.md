@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [2.1.0]
+
+### Added
+
+- Help screens come from `dry-cli-help`: `alock -h` now opens with the gem's title and a description of what it does and how the two backends are chosen, lists commands in registration order, and wraps everything at 85 columns. The hand-written backend banner that used to print above dry-cli's own help is gone.
+
+### Changed
+
+- Finding a Redis now cascades: `REDIS_URL` is tried first when it is set, then `redis://127.0.0.1:6379/0`, and only when neither answers does a virgin tree default to the file store. Previously `REDIS_URL` replaced the local default rather than preceding it, so a shared Redis being down sent the tree straight to the filesystem even with one running locally. `RedisStore.url` now reports the URL that actually answered.
+
 ## [0.2.0]
 
 ### Added

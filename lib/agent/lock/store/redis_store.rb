@@ -20,9 +20,13 @@ module Agent
       # markdown document either way.
       #
       # Picked with AGENT_LOCK_BACKEND=redis, or by default when one answers on
-      # REDIS_URL. See Store's moduledoc for how that default is decided.
+      # REDIS_URL, or failing that on the local default. See Store's moduledoc
+      # for how that default is decided.
       class RedisStore
         NAMESPACE = "agent-lock"
+
+        # Tried after REDIS_URL, or alone when it is unset.
+        LOCAL_URL = "redis://127.0.0.1:6379/0"
 
         # How long the store mutex outlives a holder that died holding it. A
         # claim's critical section is a SCAN and one SET, so ten seconds is
@@ -206,15 +210,59 @@ module Agent
         end
 
         class << self
-          def url = ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379/0")
+          # The URL of the Redis actually in use, once one has answered, or
+          # the first one that will be tried before then.
+          #
+          # @return [String]
+          def url = @url || candidate_urls.first
 
+          # Where to look, in order: `REDIS_URL` when set, then the local
+          # default. A `REDIS_URL` that nobody answers on is not the end of
+          # the search, because the usual reason it is set is a shared
+          # instance that is sometimes down, and a local one is still better
+          # than falling all the way back to the filesystem.
+          #
+          # @return [Array<String>]
+          def candidate_urls
+            configured = ENV["REDIS_URL"].to_s.strip
+            [configured.empty? ? nil : configured, LOCAL_URL].compact.uniq
+          end
+
+          # Tries each candidate URL in turn and keeps the first that answers.
+          #
           # @return Array[RedisClient,NilClass,Exception] the client if it could be created,
-          # or the error that prevented it
+          # or the error that prevented it (the last one tried)
           def create_client
-            @client ||= ::Redis.new(url: url).tap do |client|
-              _version = client.info["redis_version"]
+            return [@client, nil] if @client
+
+            error = nil
+            candidate_urls.each do |candidate|
+              client, error = connect(candidate)
+              next unless client
+
+              @url = candidate
+              @client = client
+              return [@client, nil]
             end
-            [@client, nil]
+            [nil, error]
+          end
+
+          # Drops the memoized client, so the next `create_client` probes again.
+          #
+          # @return [void]
+          def reset!
+            @client = nil
+            @url = nil
+          end
+
+          private
+
+          # @param candidate [String]
+          # @return Array[RedisClient,NilClass,Exception]
+          def connect(candidate)
+            client = ::Redis.new(url: candidate)
+            client.info["redis_version"]
+            [client, nil]
           rescue Redis::CannotConnectError, Redis::BaseError, Errno::ECONNREFUSED, SocketError => e
             [nil, e]
           end
