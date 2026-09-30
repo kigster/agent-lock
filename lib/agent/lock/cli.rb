@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require_relative "manager"
+require_relative "version"
 require "dry/cli"
+require "dry/cli/help"
 
 module Agent
   module Lock
@@ -14,6 +16,32 @@ module Agent
       # runner. The completion script it emits names the program in every
       # line, so guessing it wrong is not a cosmetic mistake.
       PROGRAM_NAME = "alock"
+
+      # What `alock -h` says before it lists the commands. Wrapped by
+      # dry-cli-help at HELP_WIDTH rather than the terminal's width, so the
+      # screen reads the same in a wide terminal, a narrow one, and a log.
+      HELP_WIDTH = 85
+
+      DESCRIPTION = <<~TEXT
+        Advisory locks for AI coding agents working concurrently in one checkout.
+        An agent claims the file or directory it is about to write, and every other
+        agent that checks sees who holds it and why. Nothing is enforced: the locks
+        work because every agent checks before it writes.
+
+        Locks live in one of two backends. Redis, when one answers on REDIS_URL or
+        on localhost:6379, holds across machines and can expire an abandoned lock.
+        The file store, used when no Redis answers, needs nothing installed. The
+        first process in a tree records which backend it chose, and every later
+        process in that tree stays on it. Set AGENT_LOCK_BACKEND to `redis` or
+        `file` to choose one yourself.
+      TEXT
+
+      Dry::CLI::Help.configure do
+        title "Agent Lock, Version #{Agent::Lock::VERSION}"
+        description DESCRIPTION
+        epilogue "Documentation: https://github.com/kigster/agent-lock"
+        width HELP_WIDTH
+      end
 
       # A registry whose commands are already bound to this launcher, so a
       # command writes to the streams it was given rather than to the process's.

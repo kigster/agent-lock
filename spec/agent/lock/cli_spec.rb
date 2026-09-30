@@ -422,7 +422,7 @@ RSpec.describe Agent::Lock::CLI do
     end
 
     it "describes itself in the command list" do
-      expect(agent_lock("--help").output).to include("completion SHELL")
+      expect(agent_lock("--help").output).to match(/^  completion\s+Print a shell completion script/)
     end
   end
 
@@ -430,7 +430,18 @@ RSpec.describe Agent::Lock::CLI do
     # dry-cli calls `exit` directly for help, which would take the whole suite
     # down if the Launcher did not catch it.
     it "prints help without taking the process down with it" do
-      expect(agent_lock("--help").output).to include("acquire SCOPE [INTENT]")
+      output = agent_lock("--help").output
+
+      aggregate_failures do
+        expect(output).to include("Agent Lock, Version #{Agent::Lock::VERSION}")
+        expect(output).to include("Advisory locks for AI coding agents")
+        expect(output).to match(/^  acquire\s+Claim a path or glob/)
+        expect(output.lines.map(&:chomp).map(&:length).max).to be <= Agent::Lock::CLI::HELP_WIDTH
+      end
+    end
+
+    it "prints a command's own usage with its arguments" do
+      expect(agent_lock("acquire --help").output).to match(/^  \S+ acquire SCOPE \[INTENT\] \[OPTIONS\]$/)
     end
 
     it "refuses a command nobody implements" do
