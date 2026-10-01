@@ -15,6 +15,18 @@ REPO_ROOT = File.expand_path("../..", __dir__)
 BADGE_DIR = File.join(REPO_ROOT, "docs", "badges")
 FileUtils.mkdir_p(BADGE_DIR)
 
+have_local_redis = `(echo info | redis-cli -u redis://127.0.0.1:6379/ 2>&1 | \
+  egrep -q redis_version && echo 1 || echo 0) | tr -d '\n'`
+
+if have_local_redis == "1"
+  ENV["REDIS_URL"] = "redis://127.0.0.1:6379/"
+  warn "Using local Redis: #{ENV.fetch("REDIS_URL", nil)}"
+elsif ENV["REDIS_URL"]
+  warn "Using external Redis: #{ENV["REDIS_URL"]}"
+else
+  warn "No Redis found, using file system"
+end
+
 SimpleCov.start do
   # `cover` (replacing the deprecated `track_files`) is what makes the number
   # mean anything: without it SimpleCov only counts files some example happened
@@ -35,6 +47,7 @@ SimpleCov.at_exit do
   SimpleCov.result.format!
   # rubocop: disable-next RSpec/Output
   puts "Coverage: #{SimpleCov.result.covered_percent.round(2)}%"
+  FileUtils.mkdir_p(BADGE_DIR)
   FileUtils.mv("coverage/badge.svg", File.join(BADGE_DIR, "coverage_badge.svg"))
 end
 

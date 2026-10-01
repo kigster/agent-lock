@@ -1,17 +1,14 @@
-# Agent::Lock (v2.0.1)
+# Agent Lock `agent-lock` CLI
 
 [![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml)
 
-Advisory locks on files and folders with pluggable backends (redis and file-system provided out the box, with redis being the default if it's available locally). This locking tool is meant to be used by the coding agents that share a checkout.
+A CLI utility `alock` that supports advisory locks on files and folders with pluggable backends (redis and file-system provided out the box, with redis being the default if it's available locally). This locking tool is meant to be used by the coding agents that share a project.
 
 > [!NOTE]
 >
-> Please note that `agent-lock` is part of a three-part system: 
+> Please note that `agent-lock` is part of a three-part system: [`agentilda`](htttps://github.com/kigster/agentilda) is an AI harness workflow that works by creating specs, plans, and executing the plan until one or more PRs passing CI are created, and [`agentilda-ai-setup`](https://kigster/agentilda-ai-setup) — the GitHub repo that's a mixture of BASH and Ruby installers. It's comes with the [`configuration.yml`](https://github.com/kigster/agentilda-ai-setup/blob/main/configuration.example.yml) file, which determines what skills, commands, plugins and AI coding agents are locally installed.
 >
-> 1. `agentilda` is the Ruby Gem, which is a CLI tool that creates and manages the `.plans` folder, and comes with eight or so specialized agents that take a spec.md file and work through it until it's a set of PRs open, reviewed, and passing on your CI. It does not automatically merge anything.
-> 2. [`agentilda-ai-setup`](https://kigster/agentilda-ai-setup) is the GitHub repo that's a mixture of BASH and Ruby installers. It's comes with the [`configuration.yml`](https://github.com/kigster/agentilda-ai-setup/blob/main/configuration.example.yml) file, which lists the installation commands for the coding agents you'd like to install locally, any other executables you might want (for instance, it installs `bt` — braintrust's CLI utility), and then you can list any number of Github Repos and use them to install skills, plugins, commands from them, specifying exactly which you want to install and which you want to exclude. Moreover you can specify a sub-directory of a github repo to install from.
->
-> Together, the three repos, after installation provide you with the consistent way to replicate your `~/.agents` and `~/.claude` folders on multiple computers, and to also replicate a consistent agentic software team workflow across many projects.
+> That said, you can absolutely use `agent-lock` gem in your own environment.
 
 ## What it is
 
@@ -27,6 +24,8 @@ Git does not help here. Two agents on one branch and one working tree never prod
 
 - **Harnesses** that launch agents over a repository and need them to stay out of each other's way.
 
+- **Supports multiple local nodes** with the same project directories, if `$REDIS_URL` is set to a non-local Redis instance (it needs to be set to the same value on all participating nodes)
+
 Not for work that can have a checkout of its own. A git worktree per agent removes the sharing altogether, which is better than coordinating it. The locks are advisory: they protect a file only from agents that check. `--enforce` exists for the few files that must not move at all.
 
 ## How to use it
@@ -35,7 +34,8 @@ Not for work that can have a checkout of its own. A git worktree per agent remov
 
 ```bash
 gem install agent-lock
-alock version        # alock must be on PATH
+hash -r
+alock version  # alock must be on PATH
 ```
 
 Or add `gem "agent-lock"` to a Gemfile.
