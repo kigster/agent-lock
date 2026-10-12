@@ -27,6 +27,12 @@ RSpec.describe Agent::Lock::Skill do
     it { is_expected.to match(/^description: Use when /) }
   end
 
+  describe ".bundled" do
+    it "names every skill the gem ships" do
+      expect(described_class.bundled).to include("agent-lock")
+    end
+  end
+
   describe "#install" do
     context "when the skills directory does not exist yet" do
       subject!(:result) { skill.install }

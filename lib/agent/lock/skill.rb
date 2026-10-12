@@ -30,6 +30,10 @@ module Agent
         # @return [String] the bundled skill's directory
         def source = File.join(ROOT, NAME)
 
+        # @return [Array<String>] the name of every skill the gem ships, so
+        #   help text can say what `install` puts on disk
+        def bundled = Dir.children(ROOT).select { |name| File.directory?(File.join(ROOT, name)) }.sort
+
         # @return [String] where most agents other than Claude Code look for
         #   a user's own skills; the CLI's `--for claude` points at
         #   `~/.claude/skills` instead

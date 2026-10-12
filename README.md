@@ -107,10 +107,10 @@ Three things matter, and each one fails silently if skipped:
 The gem ships a skill that teaches an agent all of the above, so the rules reach the agents rather than living only in this README. Install it into the skills directory your agent reads:
 
 ```bash
-alock skill install                    # default: into ~/.agents/skills, for most agents
-alock skill install --for claude       # into ~/.claude/skills instead
-alock skill install --into some/path   # anywhere else, --for is ignored if both are given
-alock skill path                       # where the bundled copy is
+alock skills install                   # default: into ~/.agents/skills, for most agents
+alock skills install --for claude      # into ~/.claude/skills instead
+alock skills install --into some/path  # anywhere else, --for is ignored if both are given
+alock skills path                      # where the bundled copy is
 ```
 
 `install` refuses to overwrite a copy that differs (`--force` replaces it) and never touches a symlink, since a symlink is some other installer's.
@@ -290,8 +290,8 @@ Only live claims are counted as held. `--json` gives every record its `status` a
 | `release-all`              | Everything this session and its sub-agents hold        | 0                                                      |
 | `break <scope>`            | Take a live lock away from its holder                  | 0                                                      |
 | `whoami`                   | The name this session signs locks with, and its parent | 0                                                      |
-| `skill install`            | Copy the bundled skill into a skills directory         | 1 if a different copy or a symlink is there            |
-| `skill path`               | Where the bundled skill is                             | 0                                                      |
+| `skills install`           | Copy the bundled skill into a skills directory         | 1 if a different copy or a symlink is there            |
+| `skills path`              | Where the bundled skill is                             | 0                                                      |
 | `completion bash\|zsh`     | Print a shell completion script                        | 1 for any other shell                                  |
 
 Flags:
