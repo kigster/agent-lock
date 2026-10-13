@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Development moves to Ruby 4.1.0-preview1 (`.ruby-version`). CI runs the suite on both 4.0.6 and 4.1.0-preview1, and rubocop on whatever `.ruby-version` names. `required_ruby_version` is unchanged.
 - `alock skill install` and `alock skill path` are now `alock skills install` and `alock skills path`. The old `skill` spelling is gone.
 - `alock skills install --help` names every skill it installs, and renders at all: an empty example string used to crash dry-cli-help, and the launcher exited 0 with no output.
 
