@@ -9,7 +9,7 @@ module Agent
       module Commands
         # Where the bundled skill is, for a harness that would rather link it
         # than copy it, or a configuration that names it by path.
-        class SkillPath < Base
+        class SkillsPath < Base
           desc "Print the directory of the skill this gem ships"
 
           def call(**)
@@ -19,8 +19,8 @@ module Agent
 
         # Copy the bundled skill into a skills directory, so an agent learns
         # how to claim files before it first needs to.
-        class SkillInstall < Base
-          desc "Copy the skill this gem ships into a skills directory"
+        class SkillsInstall < Base
+          desc "Copy the skills this gem ships into a skills directory: #{Skill.bundled.join(", ")}"
 
           option :into, type: :string, default: nil, aliases: ["-o"],
                         desc: "The skills directory, default ~/.agents/skills"
@@ -29,8 +29,13 @@ module Agent
           option :force, type: :boolean, default: false, aliases: ["-f"],
                          desc: "Replace a copy that differs from this one"
 
-          example ["", "--into ~/.claude/skills", "--force"]
-          example ["", "--for claude"]
+          # An empty example crashes dry-cli-help's renderer, so the default
+          # install is spelled out as an option-free line with a comment.
+          example [
+            " # into ~/.agents/skills",
+            "--for claude # into ~/.claude/skills",
+            "--into ~/some/skills --force # replace a copy that differs"
+          ]
 
           # @param options [Hash]
           def call(**options)
@@ -63,7 +68,7 @@ module Agent
             when :current then say("UP TO DATE #{result.path}")
             when :differs
               warn_("REFUSED: #{result.path} differs from the copy this gem ships")
-              warn_("  #{program} skill install --force   # replace it")
+              warn_("  #{program} skills install --force   # replace it")
             when :linked
               warn_("REFUSED: #{result.path} is a symlink, so something else installs it; left alone")
             end

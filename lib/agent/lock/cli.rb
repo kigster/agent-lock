@@ -81,7 +81,7 @@ require_relative "cli/commands/break"
 require_relative "cli/commands/note"
 require_relative "cli/commands/resume"
 require_relative "cli/commands/whoami"
-require_relative "cli/commands/skill"
+require_relative "cli/commands/skills"
 require_relative "cli/commands/version"
 require_relative "cli/commands/completion"
 
@@ -99,8 +99,8 @@ module Agent
         "note" => [Commands::Note, []],
         "resume" => [Commands::Resume, []],
         "whoami" => [Commands::Whoami, []],
-        "skill path" => [Commands::SkillPath, []],
-        "skill install" => [Commands::SkillInstall, []],
+        "skills path" => [Commands::SkillsPath, []],
+        "skills install" => [Commands::SkillsInstall, []],
         "version" => [Commands::Version, %w[-v --version]]
       }.freeze
     end

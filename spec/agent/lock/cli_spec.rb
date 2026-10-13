@@ -354,11 +354,20 @@ RSpec.describe Agent::Lock::CLI do
     end
   end
 
-  describe "skill" do
+  describe "skills" do
     let(:into) { expand_path("installed-skills") }
 
+    it "names every skill install puts on disk in its help" do
+      command = agent_lock("skills install --help")
+
+      aggregate_failures do
+        expect(command).to have_exit_status(0)
+        Agent::Lock::Skill.bundled.each { |name| expect(command.output).to include(name) }
+      end
+    end
+
     it "says where the bundled skill is, so a harness can link it instead" do
-      command = agent_lock("skill path")
+      command = agent_lock("skills path")
 
       aggregate_failures do
         expect(command).to have_exit_status(0)
@@ -367,7 +376,7 @@ RSpec.describe Agent::Lock::CLI do
     end
 
     it "installs the skill into a skills directory" do
-      command = agent_lock("skill install --into #{into}")
+      command = agent_lock("skills install --into #{into}")
 
       aggregate_failures do
         expect(command).to have_exit_status(0)
@@ -377,16 +386,16 @@ RSpec.describe Agent::Lock::CLI do
     end
 
     it "says a second install changed nothing" do
-      agent_lock("skill install --into #{into}")
+      agent_lock("skills install --into #{into}")
 
-      expect(agent_lock("skill install --into #{into}").stdout).to include("UP TO DATE")
+      expect(agent_lock("skills install --into #{into}").stdout).to include("UP TO DATE")
     end
 
     it "refuses to overwrite a copy that differs, and says how to" do
       FileUtils.mkdir_p(File.join(into, "agent-lock"))
       File.write(File.join(into, "agent-lock", "SKILL.md"), "edited\n")
 
-      command = agent_lock("skill install --into #{into}")
+      command = agent_lock("skills install --into #{into}")
 
       aggregate_failures do
         expect(command).to have_exit_status(1)
