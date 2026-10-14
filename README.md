@@ -6,7 +6,7 @@ A CLI utility `alock` that supports advisory locks on files and folders with plu
 
 > [!NOTE]
 >
-> Please note that `agent-lock` is part of a three-part system: [`openlanes`](htttps://github.com/kigster/openlanes) is an AI harness workflow that works by creating specs, plans, and executing the plan until one or more PRs passing CI are created, and [`agentilda-ai-setup`](https://kigster/agentilda-ai-setup) — the GitHub repo that's a mixture of BASH and Ruby installers. It's comes with the [`configuration.yml`](https://github.com/kigster/agentilda-ai-setup/blob/main/configuration.example.yml) file, which determines what skills, commands, plugins and AI coding agents are locally installed.
+> Please note that `agent-lock` is part of a three-part system: [openlanes](htttps://github.com/kigster/openlanes) is an AI harness workflow that works by creating specs, plans, and executing the plan until one or more PRs passing CI are created, and [`agentilda-ai-setup`](https://kigster/agentilda-ai-setup) — the GitHub repo that's a mixture of BASH and Ruby installers. It's comes with the [`configuration.yml`](https://github.com/kigster/agentilda-ai-setup/blob/main/configuration.example.yml) file, which determines what skills, commands, plugins and AI coding agents are locally installed.
 >
 > That said, you can absolutely use the `agent-lock` gem in your own environment.
 
