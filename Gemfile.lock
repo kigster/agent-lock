@@ -3,9 +3,9 @@ PATH
   specs:
     agent-lock (3.0.0)
       dry-cli (~> 1.4)
-      dry-cli-autocomplete (~> 0.5)
-      dry-cli-help (~> 0.5)
-      dry-cli-ui (~> 0.5)
+      dry-cli-autocomplete (~> 0.6)
+      dry-cli-help (~> 0.6)
+      dry-cli-ui (~> 0.7)
       pastel (~> 0.8)
       redis (~> 5.0)
 
@@ -204,6 +204,7 @@ GEM
     unicode-display_width (2.6.0)
     unicode_utils (1.4.0)
     wisper (2.0.1)
+    yard (0.9.45)
 
 PLATFORMS
   arm64-darwin-25
@@ -222,6 +223,7 @@ DEPENDENCIES
   rubocop-rake
   rubocop-rspec
   simplecov
+  yard
 
 CHECKSUMS
   agent-lock (3.0.0)
@@ -309,6 +311,7 @@ CHECKSUMS
   unicode-display_width (2.6.0) sha256=12279874bba6d5e4d2728cef814b19197dbb10d7a7837a869bab65da943b7f5a
   unicode_utils (1.4.0) sha256=b922d0cf2313b6b7136ada6645ce7154ffc86418ca07d53b058efe9eb72f2a40
   wisper (2.0.1) sha256=ce17bc5c3a166f241a2e6613848b025c8146fce2defba505920c1d1f3f88fae6
+  yard (0.9.45)
 
 BUNDLED WITH
   4.1.0.beta1

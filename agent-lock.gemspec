@@ -51,9 +51,9 @@ Gem::Specification.new do |spec|
 
   # Uncomment to register a new dependency of your gem
   spec.add_dependency "dry-cli", "~> 1.4"
-  spec.add_dependency "dry-cli-autocomplete", "~> 0.5"
-  spec.add_dependency "dry-cli-help", "~> 0.5"
-  spec.add_dependency "dry-cli-ui", "~> 0.5"
+  spec.add_dependency "dry-cli-autocomplete", "~> 0.6"
+  spec.add_dependency "dry-cli-help", "~> 0.6"
+  spec.add_dependency "dry-cli-ui", "~> 0.7"
   spec.add_dependency "pastel", "~> 0.8"
   spec.add_dependency "redis", "~> 5.0"
 
