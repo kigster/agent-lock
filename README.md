@@ -2,17 +2,17 @@
 
 [![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml)
 
-A CLI utility `alock` that supports advisory locks on files and folders with pluggable backends (redis and file-system provided out the box, with redis being the default if it's available locally). This locking tool is meant to be used by the coding agents that share a project.
+A CLI utility `alock` that supports advisory locks on files and folders with pluggable backends (redis and file system provided out of the box, with redis being the default if it's available locally). This locking tool is meant for coding agents that share a project.
 
 > [!NOTE]
 >
-> Please note that `agent-lock` is part of a three-part system: [`agentilda`](htttps://github.com/kigster/agentilda) is an AI harness workflow that works by creating specs, plans, and executing the plan until one or more PRs passing CI are created, and [`agentilda-ai-setup`](https://kigster/agentilda-ai-setup) — the GitHub repo that's a mixture of BASH and Ruby installers. It's comes with the [`configuration.yml`](https://github.com/kigster/agentilda-ai-setup/blob/main/configuration.example.yml) file, which determines what skills, commands, plugins and AI coding agents are locally installed.
+> Please note that `agent-lock` is part of a three-part system: [`openlanes`](htttps://github.com/kigster/openlanes) is an AI harness workflow that works by creating specs, plans, and executing the plan until one or more PRs passing CI are created, and [`agentilda-ai-setup`](https://kigster/agentilda-ai-setup) — the GitHub repo that's a mixture of BASH and Ruby installers. It's comes with the [`configuration.yml`](https://github.com/kigster/agentilda-ai-setup/blob/main/configuration.example.yml) file, which determines what skills, commands, plugins and AI coding agents are locally installed.
 >
-> That said, you can absolutely use `agent-lock` gem in your own environment.
+> That said, you can absolutely use the `agent-lock` gem in your own environment.
 
 ## What it is
 
-`agent-lock` is a gem with one executable, `alock` (also installed as `agent-lock`). An agent runs `alock acquire <scope>` before it writes, and learns in one reply whether anybody else is working there: who, since when, and doing what. It works for separate sessions in one checkout, and for the sub-agents of a single session, which is the harder case.
+`agent-lock` is a gem with one executable, `alock` (also installed as `agent-lock`). An agent runs `alock acquire <scope>` before it writes, and learns in one reply whether anybody else is working there: who, since when, and doing what. It works for separate sessions in one checkout and for the sub-agents of a single session, the harder case.
 
 Git does not help here. Two agents on one branch and one working tree never produce a conflict: the second writer simply wins, and the first one's work is gone without an error anywhere. A lock stops that, but only if every writer can be named reliably, even though an agent harness runs each command in a brand new shell. Making that name stable, and keeping claims correct when several agents ask at the same moment, is most of what this gem does.
 
@@ -115,7 +115,7 @@ alock skills path                      # where the bundled copy is
 
 `install` refuses to overwrite a copy that differs (`--force` replaces it) and never touches a symlink, since a symlink is some other installer's.
 
-If skills on your machine are installed from repositories by a manifest, name this one as a source instead, so the skill is recorded along with where it came from. For example:
+If you installed skills on your machine from repositories via a manifest, name this one as a source instead so the skill is recorded along with where it came from. For example:
 
 ```yaml
 - name: agent-lock
@@ -155,11 +155,11 @@ In order of preference:
 The fingerprint walks up from the current process until it finds an ancestor that is not a shell. That is the `claude` or `codex` process driving the session, or the terminal a person is typing in. Its pid, start time, uid and hostname are hashed into a name like `claude-1f4c8a02`, which stays the same for as long as the session lives and differs from anybody else's.
 
 > [!NOTE]
-> The start time is in the hash on purpose. Pids get recycled, and a new session that lands on a dead one's number should not inherit its locks.
+> The start time is in the hash on purpose. PIDs get recycled, and a new session that lands on a dead one's number should not inherit its locks.
 
 `alock whoami` prints the name this session would sign a lock with, its parent, and where each came from. Run it before the first claim if in doubt.
 
-### Locks live inside `.git`
+### Locks live inside `.git.`
 
 The store is `$(git rev-parse --git-common-dir)/agent-locks`.
 
@@ -182,13 +182,13 @@ status: active
 pid: 69232
 created_at: 2026-09-09T21:04:11Z
 ---
-rewriting the installer
+Rewriting the installer
 
 ## Progress
 - 2026-09-09T21:14:02Z installer rewritten, specs still red
 ```
 
-An agent that runs into this learns who holds the scope and what they are doing, so it can decide whether to wait or to work somewhere else. A human can read the same file in an editor.
+An agent that runs into this learns who owns the scope and what they are doing, so it can decide whether to wait or work elsewhere. A human can read the same file in an editor.
 
 ### Scopes are globs
 
@@ -199,10 +199,10 @@ An agent that runs into this learns who holds the scope and what they are doing,
 | `workflow`    | The same thing. A directory means everything in it |
 | `lib/cli.rb`  | One file                                           |
 
-Two scopes conflict when either one's fixed part contains the other's. So `workflow/**` conflicts with `workflow/lib/cli.rb`, and `docs/**` does not conflict with `workflow/**`.
+Two scopes conflict when one fixed part contains the other. So `workflow/**` conflicts with `workflow/lib/cli.rb`, and `docs/**` does not conflict with `workflow/**`.
 
 > [!TIP]
-> The rule deliberately refuses more often than it strictly must. Working out whether two globs can ever match the same path has answers nobody can predict, and the price of guessing wrong is somebody's lost work.
+> The rule deliberately refuses more often than it strictly must. Whether two globs can ever match the same path is unpredictable, and guessing wrong costs somebody lost work.
 
 A scope is read from where you stand, globs included, and an absolute path inside the tree is made relative. So `$PWD/lib/**` and `lib/**` are the same claim, and `*.rb` typed in `lib/` is `lib/*.rb`. Only `.`, `*` and `**` mean the whole tree from anywhere. Two things are refused with exit 2 rather than guessed at:
 
@@ -222,7 +222,7 @@ Ownership and blocking are separate questions, and conflating them is what lets 
 | A sub-agent you spawned | No, you handed that scope out                             | Yes, so cleanup takes them with it |
 | A sibling sub-agent     | No                                                        | No                                 |
 
-A sub-agent claiming inside its parent's lock gets a lock of its own, and that lock is what keeps its siblings out. Asking for exactly the parent's scope is refused, since that would leave nothing for a sibling to be kept out of; claim something narrower. A sub-agent's `release-all` gives back its own locks and its children's, never its parent's.
+A sub-agent claiming inside its parent's lock gets its own lock, and that lock keeps its siblings out. Asking for exactly the parent's scope is refused, since that would leave nothing for a sibling to be kept out of; claim something narrower. A sub-agent's `release-all` gives back its own locks and its children's, never its parent's.
 
 #### Sub-agents that share their parent's process
 
@@ -243,7 +243,7 @@ When `AGENT_ID` is set and `AGENT_PARENT_ID` is not, the parent is taken to be t
 
 ### A crash does not strand the tree
 
-A lock is cleared out of the way when its holder is provably gone: the process that signed it has exited, on this machine. A holder on another machine cannot be checked, so its lock is trusted until nobody has touched it for `AGENT_LOCK_STALE_MINUTES` (120 by default). Every `note` counts as a touch. What happens next depends on whether anything was written down:
+A lock is cleared when its holder is provably gone: the process that signed it has exited on this machine. A holder on another machine cannot be checked, so its lock is trusted until nobody has touched it for `AGENT_LOCK_STALE_MINUTES` (120 by default). Every `note` counts as a touch. What happens next depends on whether anything was written down:
 
 | The lock has | What happens to it                               |
 | :----------- | :----------------------------------------------- |
@@ -260,7 +260,7 @@ INTERRUPTED WORK on workflow/**, left by luke-backend
 > [!WARNING]
 > An orphan blocks nobody, but `acquire` will not silently overwrite one, because the notes inside it may be the only record of half-finished work. Choose `resume` or `break`.
 
-A live holder's lock is never cleared, however old it is. An agent may legitimately work on one scope for hours, and deleting its lock underneath it would hand its files to the next agent while it is still writing them. Past the stale window `list`, `check` and `mine` tag it `STALE` instead, and taking it is a `break` that somebody announces first.
+A live holder's lock is never cleared, no matter how old it is. An agent may legitimately work on one scope for hours, and deleting its lock underneath it would hand its files to the next agent while it is still writing them. Past the stale window `list`, `check` and `mine` tag it `STALE` instead, and taking it is a `break` that somebody announces first.
 
 ```
 $ alock list
@@ -303,7 +303,7 @@ Flags:
 | `--enforce`  | `acquire`                         | Also make the matched files unwritable  |
 | `--force`    | `acquire`                         | Permit `--enforce` on a very wide scope |
 
-Any command exits 2 when it cannot run at all: a scope that is empty or outside the tree, a backend mismatch, or a store it cannot reach.
+Any command exits 2 when it cannot run at all: an empty or out-of-tree scope, a backend mismatch, or a store it cannot reach.
 
 ## Shell completion
 
@@ -312,7 +312,7 @@ alock completion bash > "$(brew --prefix)/etc/bash_completion.d/alo"
 alock completion zsh  > "${fpath[1]}/_alo"
 ```
 
-Names every command and flag `alock` currently knows, since the script is generated from the same registry the CLI runs, rather than hand-maintained separately from it.
+Names every command and flag `alock` currently knows, since the script is generated from the same registry the CLI runs on, rather than hand-maintained separately.
 
 ## Configuration
 
@@ -341,7 +341,7 @@ AGENT_LOCK_BACKEND=file  alock acquire workflow/**   # or force the file store i
 Either way, every claim checks for conflicts and writes its lock while holding one mutex for the whole store. Refusing an atomic write of an identical scope is not enough on its own: `lib/**` and `lib/cli.rb` are different keys, and two agents claiming them at the same moment would both find the store empty and both win. The file store takes an exclusive `flock` on `.mutex` beside the locks. Redis takes `agent-lock-mutex:<tree digest>` with `SET NX PX` and a random token, and gives it back with a compare-and-delete script, so a process whose lease ran out cannot release somebody else's.
 
 > [!CAUTION]
-> Picking a default from whether Redis happens to answer is still never a runtime auto-*switch*. If one agent found a running Redis and switched to it while the agent beside it did not, the two would take locks in different stores, see nothing of each other, and both report success — worse than no lock at all. The first store created in a tree records which backend it is, in a marker file, and every later process in that tree is bound to it regardless of what Redis is doing next; a mismatch stops the run rather than silently picking the other one.
+> Picking a default from whether Redis happens to answer is still never a runtime auto-*switch*. If one agent found a running Redis and switched to it while the agent beside it did not, the two would take locks in different stores, see nothing of each other, and both report success — worse than no lock at all. The first store created in a tree records its backend in a marker file, and every later process in that tree is bound to it regardless of what Redis does next; a mismatch stops the run rather than silently picking the other one.
 >
 > That default is decided at the one moment two processes could otherwise race: both find a virgin tree, both probe Redis, and a flaky answer could hand them different defaults before either writes the marker. The marker is claimed atomically — the first `O_CREAT|O_EXCL` wins — and every process builds from whatever ends up on disk, never from its own guess, so a race can land on either backend but never on a split.
 
@@ -356,7 +356,7 @@ alock acquire "config/credentials/**" "keys must not move during the migration" 
 ```
 
 > [!WARNING]
-> This is opt-in for three reasons. It is macOS only, since the Linux equivalent (`chattr +i`) requires root. It denies the holder too, so it suits a freeze rather than a file you are editing. And a session that dies leaves the files frozen, at which point `git checkout` and `rm -rf` start failing with "Operation not permitted".
+> This is opt-in for three reasons. It's macOS-only, since the Linux equivalent (`chattr +i`) requires root. It denies the holder too, so it suits a freeze rather than a file you are editing. And a session that dies leaves the files frozen, at which point `git checkout` and `rm -rf` start failing with "Operation not permitted".
 >
 > Every frozen path is written into the lock, so `release` and `break` thaw them without needing the process that froze them to still exist.
 
