@@ -4,6 +4,10 @@
 
 ### Changed
 
+- **Breaking for Redis users:** locks are keyed by the repository and branch, not the checkout's absolute path. The Redis namespace and mutex are now `agent-lock:<repository digest>`, where the repository is the normalized `origin` URL, else the root commit, else the path outside git. Two machines on one Redis, or two clones on one machine, now block each other on overlapping scopes of the same branch, and checkouts on different branches (worktrees, typically) still do not. Locks taken by an earlier version under the old path-keyed namespace are not seen; release them before upgrading.
+- `release`, `note`, `break` and `resume` find a lock this checkout took on another branch, so switching branches after claiming no longer strands it. That checkout still blocks itself on those files, since they are the same files on disk.
+- Reaping a lock from another checkout or another machine no longer clears this checkout's freeze flags on files of the same relative name.
+
 - Development moves to Ruby 4.1.0-preview1 (`.ruby-version`). CI runs the suite on both 4.0.6 and 4.1.0-preview1, and rubocop on whatever `.ruby-version` names. `required_ruby_version` is unchanged.
 - `alock skill install` and `alock skill path` are now `alock skills install` and `alock skills path`. The old `skill` spelling is gone.
 - `alock skills install --help` names every skill it installs, and renders at all: an empty example string used to crash dry-cli-help, and the launcher exited 0 with no output.

@@ -69,7 +69,7 @@ module Agent
       # @return [Result]
       def release(path)
         scope = Scope.parse(path, tree: tree)
-        record = store.find(scope)
+        record = locate(scope)
         return result(:not_found, []) if record.nil?
         return result(:refused, [record]) unless record.held_by?(identity)
 
@@ -117,7 +117,7 @@ module Agent
       # @return [Result]
       def break_lock(path)
         scope = Scope.parse(path, tree: tree)
-        record = store.find(scope)
+        record = locate(scope)
         return result(:not_found, []) if record.nil?
 
         drop(record)
@@ -152,7 +152,7 @@ module Agent
       # @return [Result]
       def note(path, text)
         scope = Scope.parse(path, tree: tree)
-        record = store.find(scope)
+        record = locate(scope)
         return result(:not_found, []) if record.nil?
         return result(:refused, [record]) unless record.held_by?(identity)
 
@@ -172,7 +172,7 @@ module Agent
       def resume(path)
         scope = Scope.parse(path, tree: tree)
         store.synchronize do
-          record = store.find(scope)
+          record = locate(scope)
           next result(:not_found, []) if record.nil? || record.active?
 
           adopted = record.with(status: Record::ACTIVE, updated_at: Time.now.utc.iso8601, **claim)
@@ -243,7 +243,7 @@ module Agent
       # @param scope [Scope]
       # @return [Result, nil]
       def interrupted(scope)
-        record = store.find(scope)
+        record = locate(scope)
         result(:interrupted, [record]) if record&.orphaned?
       end
 
@@ -292,19 +292,40 @@ module Agent
       # @return [Array<Record>]
       def conflicts(scope)
         store.all.select do |record|
-          record.active? && record.tree == tree.root && record.scope_object.conflicts_with?(scope)
+          record.active? && record.about?(tree) && record.scope_object.conflicts_with?(scope)
         end
       end
 
+      # The frozen paths of a lock taken in another checkout, or on another
+      # machine, name files that are not here. Clearing them would unfreeze
+      # this checkout's files of the same name, which may be frozen under a
+      # lock of its own, so they are left alone. An orphan keeps the list, so
+      # the checkout that froze them can still see what to thaw.
+      #
       # @param record [Record]
       def orphan(record)
-        Freeze.clear(record.frozen_paths, tree: tree)
-        store.update(record.with(status: Record::ORPHANED, frozen_paths: [], updated_at: Time.now.utc.iso8601))
+        local = record.local_to?(tree)
+        Freeze.clear(record.frozen_paths, tree: tree) if local
+        store.update(record.with(status: Record::ORPHANED, frozen_paths: local ? [] : record.frozen_paths,
+                                 updated_at: Time.now.utc.iso8601))
       end
 
+      # @param record [Record]
       def drop(record)
-        Freeze.clear(record.frozen_paths, tree: tree)
+        Freeze.clear(record.frozen_paths, tree: tree) if record.local_to?(tree)
         store.delete(record)
+      end
+
+      # The lock this tree holds on a scope. Looked up by id first, which is
+      # the whole point of the id, and then by scope among this checkout's own,
+      # because the id carries the branch: a session that switched branches
+      # after claiming would otherwise be told its own lock was not there, and
+      # could neither release nor resume it.
+      #
+      # @param scope [Scope]
+      # @return [Record, nil]
+      def locate(scope)
+        store.find(scope) || store.all.find { |record| record.scope == scope.to_s && record.local_to?(tree) }
       end
 
       def result(status, records, message = nil) = Result.new(status:, records:, message:)

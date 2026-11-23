@@ -37,6 +37,65 @@ module Agent
       # @return [Boolean] a linked worktree rather than the original checkout
       def worktree? = !git_dir.nil? && git_dir != common_dir
 
+      # The repository this tree is a checkout of, named the same way on every
+      # machine that has one.
+      #
+      # The absolute path used to be the name, so `/Users/a/repo` and
+      # `/Users/b/repo` were two repositories even on one shared Redis, and two
+      # machines never saw each other's locks. A lock is about the repository
+      # and the files in it; where the checkout sits on somebody's disk is not
+      # part of that. The origin URL is preferred, normalized so that ssh and
+      # https spellings agree; then the root commit, which every clone shares
+      # even without a remote; and only outside git, the path.
+      #
+      # @return [String]
+      def repo
+        @repo ||= self.class.normalize_remote(git("config", "--get", "remote.origin.url")) ||
+                  root_commit || root
+      end
+
+      # @return [String, nil] the branch checked out, nil on a detached HEAD
+      #   or outside git
+      def branch = defined?(@branch) ? @branch : (@branch = git("symbolic-ref", "--short", "-q", "HEAD"))
+
+      # What two trees must share for their locks to collide: the repository
+      # and the branch. Two machines on `main` are writing the same files, and
+      # must see each other. Two worktrees on their own branches are not, and
+      # are left alone, which is the point of making a worktree. A detached
+      # HEAD has no branch to share, so it keeps to its own checkout.
+      #
+      # @return [String]
+      def lock_key = self.class.lock_key(repo: repo, branch: branch, root: root)
+
+      class << self
+        # One definition, shared with Record, so that a lock read back from
+        # the store is compared on exactly the terms it was written on.
+        #
+        # @param repo [String, nil]
+        # @param branch [String, nil]
+        # @param root [String]
+        # @return [String]
+        def lock_key(repo:, branch:, root:) = repo && branch ? "#{repo}@#{branch}" : root
+
+        # `git@github.com:a/b.git`, `ssh://git@github.com:22/a/b`, and
+        # `https://user@github.com/a/b.git` all come out as `github.com/a/b`.
+        #
+        # @param url [String, nil]
+        # @return [String, nil]
+        def normalize_remote(url)
+          text = url.to_s.strip
+          return nil if text.empty?
+
+          text = text.sub(%r{\A[a-z][a-z0-9+.-]*://}i, "") # scheme
+          text = text.sub(%r{\A[^@/]*@}, "")               # user
+          text = text.sub(%r{\A([^/:]+):\d*/}, '\1/')      # port
+          text = text.sub(%r{\A([^/:]+):(?!/)}, '\1/')     # scp-style host:path
+          text = text.delete_suffix("/").delete_suffix(".git").delete_suffix("/")
+          host, path = text.split("/", 2)
+          path ? "#{host.downcase}/#{path}" : text
+        end
+      end
+
       # @description Resolves the directory where locks are stored by either
       # $AGENT_LOCK_DIR environment variable if defined, or 'agent-locks'
       # inside .git if available, or the ~/.agent-locks/<tree-digest> in user's
@@ -102,6 +161,13 @@ module Agent
       rescue SystemCallError
         absolute
       end
+
+      # A merged-in history can bring more than one root commit. Any fixed
+      # pick will do, since every clone sees the same set, so the lexically
+      # first. Nil in a repository with no commits yet.
+      #
+      # @return [String, nil]
+      def root_commit = git("rev-list", "--max-parents=0", "HEAD")&.split("\n")&.min
 
       def git_dir = @git_dir ||= absolute(git("rev-parse", "--git-dir"))
 

@@ -2,6 +2,7 @@
 
 require_relative "process_info"
 require_relative "scope"
+require_relative "tree"
 
 require "yaml"
 require "time"
@@ -25,7 +26,7 @@ module Agent
     #     ---
     #     Rewriting the installer's filter pair.
     class Record
-      FIELDS = %i[id agent_id parent_agent_id scope tree worktree pid started host
+      FIELDS = %i[id agent_id parent_agent_id scope tree repo branch worktree pid started host
                   created_at updated_at status frozen_paths].freeze
 
       ACTIVE = "active"
@@ -45,18 +46,20 @@ module Agent
           evidence = identity.evidence
           new(
             id: id_for(tree, scope), agent_id: identity.id, parent_agent_id: identity.parent_id,
-            scope: scope.to_s, tree: tree.root, worktree: tree.worktree?,
+            scope: scope.to_s, tree: tree.root, repo: tree.repo, branch: tree.branch, worktree: tree.worktree?,
             pid: evidence[:pid], started: evidence[:started], host: evidence[:host],
             created_at: Time.now.utc.iso8601, status: ACTIVE, frozen_paths: [], intent: intent
           )
         end
 
-        # Derived from the tree and the scope so that a second run looking for
-        # the same lock finds it without reading every file in the store.
+        # Derived from the tree's lock key and the scope so that a second run
+        # looking for the same lock finds it without reading every file in the
+        # store, and so that two checkouts of one branch, on any machine, are
+        # after the same id and cannot both win it.
         #
         # @return [String]
         def id_for(tree, scope)
-          digest = Digest::SHA256.hexdigest("#{tree.root}\0#{scope}")[0, 8]
+          digest = Digest::SHA256.hexdigest("#{tree.lock_key}\0#{scope}")[0, 8]
           "#{scope.slug}-#{digest}"
         end
 
@@ -126,6 +129,27 @@ module Agent
 
       # @return [Scope]
       def scope_object = @scope_object ||= Scope.new(scope)
+
+      # @return [String] see Tree#lock_key. A record written before `repo` and
+      #   `branch` were kept has neither, and so falls back to its path.
+      def lock_key = Tree.lock_key(repo: repo, branch: branch, root: tree)
+
+      # Whether this lock is about the files a tree holds: the same repository
+      # on the same branch, from anywhere, or this very checkout on this host,
+      # whatever branch it was taken on, since switching branches does not
+      # make the files on disk somebody else's.
+      #
+      # @param checkout [Tree]
+      # @return [Boolean]
+      def about?(checkout) = lock_key == checkout.lock_key || local_to?(checkout)
+
+      # Whether this lock was taken in this very checkout, on this host. Only
+      # then do its frozen paths name files here: the same relative path in
+      # another checkout, or on another machine, is a different file.
+      #
+      # @param checkout [Tree]
+      # @return [Boolean]
+      def local_to?(checkout) = tree == checkout.root && same_host?
 
       # Two different questions, deliberately not one.
       #
