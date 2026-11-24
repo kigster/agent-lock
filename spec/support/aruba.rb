@@ -47,6 +47,13 @@ RSpec.shared_context "a CLI" do
     write_file("workflow/lib/cli.rb", "# stub\n")
     write_file("docs/api.md", "# stub\n")
     set_environment_variable("AGENT_ID", "test-agent")
+
+    # Commands run in Aruba's environment, not this process's, and the
+    # backend pin spec_helper sets per example never reached it. Every CLI
+    # example on the Redis backend wrote into database 0 of the developer's
+    # own Redis, where the per-example flush of TEST_REDIS_URL never looked,
+    # and one example's locks turned up in the next one's output.
+    %w[REDIS_URL AGENT_LOCK_BACKEND].each { |name| set_environment_variable(name, ENV[name]) if ENV[name] }
   end
 
   # @param line [String] everything after `agent-lock`
