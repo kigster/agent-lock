@@ -17,17 +17,33 @@ module Agent
           argument :scope, required: true, desc: "The path or glob to pick up"
 
           def call(scope:, **options)
-            result = manager(options[:dir]).resume(scope)
+            manager = manager(options[:dir])
+            result = manager.resume(scope)
+            report(result, scope, manager.stale_minutes)
+            finish(result)
+          end
 
-            if result.status == :not_found
-              say("NOTHING TO RESUME #{scope}")
+          private
+
+          # @param result [Manager::Result]
+          # @param scope [String] as typed
+          # @param stale_minutes [Integer]
+          def report(result, scope, stale_minutes)
+            case result.status
+            when :not_found then say("NOTHING TO RESUME #{scope}")
+            when :held
+              # Somebody claimed an overlapping scope while the work sat
+              # orphaned; their claim is live and this one is not.
+              warn_("REFUSED, somebody claimed it while it was interrupted; the notes are still there")
+              report_held(result.records, stale_minutes: stale_minutes)
+            when :interrupted
+              warn_("REFUSED, #{result.record&.agent_id || "another session"} left interrupted work " \
+                    "on #{scope} on this branch; resume or break that first")
             else
               say("RESUMED #{result.record.scope}  (holder: #{result.record.agent_id})")
               say("")
               say(result.record.intent)
             end
-
-            finish(result)
           end
         end
       end

@@ -304,6 +304,25 @@ RSpec.describe Agent::Lock::CLI do
     end
   end
 
+  describe "resume" do
+    # An orphan blocks nobody, so a claim taken while it sat there is live,
+    # and the work that was interrupted has to wait for it.
+    it "refuses, and names who claimed an overlapping scope while the work was interrupted" do
+      plant("workflow/**", agent: "crashed-agent", status: Agent::Lock::Record::ORPHANED)
+      set_environment_variable("AGENT_ID", "somebody-else")
+      agent_lock("acquire workflow/lib 'meanwhile'")
+      set_environment_variable("AGENT_ID", "crashed-agent-again")
+
+      command = agent_lock("resume workflow")
+
+      aggregate_failures do
+        expect(command).to have_exit_status(1)
+        expect(command.stderr).to include("REFUSED, somebody claimed it while it was interrupted")
+        expect(command.stderr).to match(%r{^HELD  workflow/lib/\*\*  by somebody-else})
+      end
+    end
+  end
+
   # A hint is only worth printing if it can be pasted back. `agent-lock` said
   # to somebody who typed `alock` may not be on their PATH at all, or may be a
   # different program of the same name that shadows this one.

@@ -145,14 +145,17 @@ module Agent
 
         private
 
-        # Keyed by the tree, so one Redis instance serves every checkout on the
-        # machine without their locks colliding.
+        # Keyed by the repository, not the checkout, so that every checkout of
+        # it, on every machine sharing this Redis, reads the same locks. It
+        # used to be the absolute path, which kept two machines apart even when
+        # they were editing the same file. Which of those locks actually
+        # collide is decided by Record#about?, not here.
         def namespace = "#{NAMESPACE}:#{digest}"
 
         # @return [String]
         def url = self.class.url
 
-        def digest = ::Digest::SHA256.hexdigest(tree.root)[0, 12]
+        def digest = ::Digest::SHA256.hexdigest(tree.repo)[0, 12]
 
         # SET NX PX until it takes, backing off with jitter so that processes
         # which all lost the same round do not all come back for the next one

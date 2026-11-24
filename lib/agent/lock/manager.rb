@@ -69,7 +69,7 @@ module Agent
       # @return [Result]
       def release(path)
         scope = Scope.parse(path, tree: tree)
-        record = store.find(scope)
+        record = locate(scope, prefer: ->(found) { found.held_by?(identity) })
         return result(:not_found, []) if record.nil?
         return result(:refused, [record]) unless record.held_by?(identity)
 
@@ -117,7 +117,7 @@ module Agent
       # @return [Result]
       def break_lock(path)
         scope = Scope.parse(path, tree: tree)
-        record = store.find(scope)
+        record = locate(scope)
         return result(:not_found, []) if record.nil?
 
         drop(record)
@@ -152,7 +152,7 @@ module Agent
       # @return [Result]
       def note(path, text)
         scope = Scope.parse(path, tree: tree)
-        record = store.find(scope)
+        record = locate(scope, prefer: ->(found) { found.held_by?(identity) })
         return result(:not_found, []) if record.nil?
         return result(:refused, [record]) unless record.held_by?(identity)
 
@@ -167,17 +167,25 @@ module Agent
       # steps: two sessions resuming one orphan would otherwise both find it
       # interrupted, both write themselves in, and both report :resumed.
       #
+      # An orphan blocks nobody, so while it sat there somebody may have
+      # claimed an overlapping scope; that claim is checked for exactly as
+      # `acquire` would check it. And the resumed claim covers the branch this
+      # checkout is on now, not the one the orphan was taken on: it is rebound
+      # to the current tree, so that other checkouts of this branch see it.
+      #
       # @param path [String]
-      # @return [Result]
+      # @return [Result] :resumed, :not_found, or :held with what overlaps
       def resume(path)
         scope = Scope.parse(path, tree: tree)
         store.synchronize do
-          record = store.find(scope)
+          reap
+          record = locate(scope, prefer: :orphaned?.to_proc)
           next result(:not_found, []) if record.nil? || record.active?
 
-          adopted = record.with(status: Record::ACTIVE, updated_at: Time.now.utc.iso8601, **claim)
-          store.update(adopted)
-          result(:resumed, [adopted])
+          blocking = conflicts(scope).select { |other| other.blocks?(identity) }
+          next result(:held, blocking) if blocking.any?
+
+          rebind(record, scope)
         end
       end
 
@@ -247,15 +255,6 @@ module Agent
         result(:interrupted, [record]) if record&.orphaned?
       end
 
-      # Who this session is, as a lock records it.
-      #
-      # @return [Hash]
-      def claim
-        evidence = identity.evidence
-        { agent_id: identity.id, parent_agent_id: identity.parent_id,
-          pid: evidence[:pid], started: evidence[:started], host: evidence[:host] }
-      end
-
       # Freezing happens after the claim is won, never before. Flagging files
       # first and then losing the race would leave a tree full of unwritable
       # files that no lock admits to having frozen, which is the one failure
@@ -292,19 +291,65 @@ module Agent
       # @return [Array<Record>]
       def conflicts(scope)
         store.all.select do |record|
-          record.active? && record.tree == tree.root && record.scope_object.conflicts_with?(scope)
+          record.active? && record.about?(tree) && record.scope_object.conflicts_with?(scope)
         end
       end
 
+      # The frozen paths of a lock taken in another checkout, or on another
+      # machine, name files that are not here. Clearing them would unfreeze
+      # this checkout's files of the same name, which may be frozen under a
+      # lock of its own, so they are left alone. An orphan keeps the list, so
+      # the checkout that froze them can still see what to thaw.
+      #
       # @param record [Record]
       def orphan(record)
-        Freeze.clear(record.frozen_paths, tree: tree)
-        store.update(record.with(status: Record::ORPHANED, frozen_paths: [], updated_at: Time.now.utc.iso8601))
+        local = record.local_to?(tree)
+        Freeze.clear(record.frozen_paths, tree: tree) if local
+        store.update(record.with(status: Record::ORPHANED, frozen_paths: local ? [] : record.frozen_paths,
+                                 updated_at: Time.now.utc.iso8601))
       end
 
+      # @param record [Record]
       def drop(record)
-        Freeze.clear(record.frozen_paths, tree: tree)
+        Freeze.clear(record.frozen_paths, tree: tree) if record.local_to?(tree)
         store.delete(record)
+      end
+
+      # The lock this tree holds on a scope. Looked up by id first, which is
+      # the whole point of the id, and then by scope among this checkout's own,
+      # because the id carries the branch: a session that switched branches
+      # after claiming would otherwise be told its own lock was not there, and
+      # could neither release nor resume it.
+      #
+      # Both can exist at once: this checkout's lock from `main`, and another
+      # checkout's lock on the same scope on the branch this one has since
+      # switched to. `prefer` picks which one a command is after, so `release`
+      # finds the lock it owns rather than refusing on somebody else's.
+      #
+      # @param scope [Scope]
+      # @param prefer [Proc, nil] the record wanted when there is a choice
+      # @return [Record, nil]
+      def locate(scope, prefer: nil)
+        found = [store.find(scope), *store.all.select { |record| record.scope == scope.to_s && record.local_to?(tree) }]
+                .compact.uniq(&:id)
+        (prefer && found.find(&prefer)) || found.first
+      end
+
+      # An orphan made a live claim again, by this session, on this tree's
+      # current branch. When the branch moved, the id moves with it: the new
+      # record is created first, so a lost race leaves the orphan where it
+      # was, and the old one is deleted only once the new one stands.
+      #
+      # @param record [Record] the orphan
+      # @param scope [Scope]
+      # @return [Result]
+      def rebind(record, scope)
+        adopted = record.resumed(tree: tree, scope: scope, identity: identity)
+        moved = adopted.id != record.id
+        return result(:interrupted, [store.find(scope)].compact) if moved && !store.create(adopted)
+
+        moved ? store.delete(record) : store.update(adopted)
+        result(:resumed, [adopted])
       end
 
       def result(status, records, message = nil) = Result.new(status:, records:, message:)

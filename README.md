@@ -338,7 +338,20 @@ AGENT_LOCK_BACKEND=redis alock acquire workflow/**   # force it, rather than aut
 AGENT_LOCK_BACKEND=file  alock acquire workflow/**   # or force the file store instead
 ```
 
-Either way, every claim checks for conflicts and writes its lock while holding one mutex for the whole store. Refusing an atomic write of an identical scope is not enough on its own: `lib/**` and `lib/cli.rb` are different keys, and two agents claiming them at the same moment would both find the store empty and both win. The file store takes an exclusive `flock` on `.mutex` beside the locks. Redis takes `agent-lock-mutex:<tree digest>` with `SET NX PX` and a random token, and gives it back with a compare-and-delete script, so a process whose lease ran out cannot release somebody else's.
+### One repository, many machines
+
+A lock is about a repository and the files in it, not about where a checkout sits on disk. Point every machine at one Redis with `REDIS_URL`, and each checkout of the repository reads the same locks, wherever it is cloned:
+
+| Two checkouts of one repository                   | Do their locks collide?                                    |
+| ------------------------------------------------- | ---------------------------------------------------------- |
+| Same branch, any machine, any path                | Yes, on overlapping scopes; different files are fine       |
+| Different branches, such as two worktrees         | No: separate branches are what a worktree is for           |
+| One checkout that switched branch after claiming  | Yes: the files on disk did not change hands                |
+| A detached HEAD                                   | Only within that checkout, since it has no branch to share |
+
+The repository is named by its `origin` URL, normalized so that `git@github.com:a/b.git` and `https://github.com/a/b` agree. A repository with no `origin` is named by its root commit, and a directory outside git by its path.
+
+Either way, every claim checks for conflicts and writes its lock while holding one mutex for the whole store. Refusing an atomic write of an identical scope is not enough on its own: `lib/**` and `lib/cli.rb` are different keys, and two agents claiming them at the same moment would both find the store empty and both win. The file store takes an exclusive `flock` on `.mutex` beside the locks. Redis takes `agent-lock-mutex:<repository digest>` with `SET NX PX` and a random token, and gives it back with a compare-and-delete script, so a process whose lease ran out cannot release somebody else's.
 
 > [!CAUTION]
 > Picking a default from whether Redis happens to answer is still never a runtime auto-*switch*. If one agent found a running Redis and switched to it while the agent beside it did not, the two would take locks in different stores, see nothing of each other, and both report success — worse than no lock at all. The first store created in a tree records its backend in a marker file, and every later process in that tree is bound to it regardless of what Redis does next; a mismatch stops the run rather than silently picking the other one.
