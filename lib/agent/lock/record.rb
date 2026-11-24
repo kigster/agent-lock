@@ -104,6 +104,24 @@ module Agent
         "#{YAML.dump(front)}#{SEPARATOR}\n\n#{intent.strip}\n"
       end
 
+      # This orphan as a live claim again, held by `identity` on the branch
+      # `tree` is on now, which need not be the one it was taken on. Its id
+      # follows the branch, so the caller has to write it under the new id.
+      #
+      # @param tree [Tree]
+      # @param scope [Scope]
+      # @param identity [Identity]
+      # @return [Record]
+      def resumed(tree:, scope:, identity:)
+        evidence = identity.evidence
+        with(
+          id: self.class.id_for(tree, scope), tree: tree.root, repo: tree.repo, branch: tree.branch,
+          worktree: tree.worktree?, status: ACTIVE, updated_at: Time.now.utc.iso8601,
+          agent_id: identity.id, parent_agent_id: identity.parent_id,
+          pid: evidence[:pid], started: evidence[:started], host: evidence[:host]
+        )
+      end
+
       # @return [Boolean] the holder is gone, but the work it recorded is not
       def orphaned? = status == ORPHANED
 
@@ -131,8 +149,9 @@ module Agent
       def scope_object = @scope_object ||= Scope.new(scope)
 
       # @return [String] see Tree#lock_key. A record written before `repo` and
-      #   `branch` were kept has neither, and so falls back to its path.
-      def lock_key = Tree.lock_key(repo: repo, branch: branch, root: tree)
+      #   `branch` were kept has neither, and so falls back to its path on the
+      #   host that wrote it, which no other host's key can equal.
+      def lock_key = Tree.lock_key(repo: repo, branch: branch, root: tree, host: host)
 
       # Whether this lock is about the files a tree holds: the same repository
       # on the same branch, from anywhere, or this very checkout on this host,

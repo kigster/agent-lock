@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require "socket"
 require_relative "scope"
 
 module Agent
@@ -62,10 +63,12 @@ module Agent
       # and the branch. Two machines on `main` are writing the same files, and
       # must see each other. Two worktrees on their own branches are not, and
       # are left alone, which is the point of making a worktree. A detached
-      # HEAD has no branch to share, so it keeps to its own checkout.
+      # HEAD has no branch to share, so it keeps to its own checkout on its
+      # own host: the path alone is not enough, since two machines can clone
+      # to the same path and now read one namespace.
       #
       # @return [String]
-      def lock_key = self.class.lock_key(repo: repo, branch: branch, root: root)
+      def lock_key = self.class.lock_key(repo: repo, branch: branch, root: root, host: Socket.gethostname)
 
       class << self
         # One definition, shared with Record, so that a lock read back from
@@ -74,8 +77,14 @@ module Agent
         # @param repo [String, nil]
         # @param branch [String, nil]
         # @param root [String]
+        # @param host [String, nil] nil only for a record written before hosts
+        #   were kept, which then matches by its path on this host alone
         # @return [String]
-        def lock_key(repo:, branch:, root:) = repo && branch ? "#{repo}@#{branch}" : root
+        def lock_key(repo:, branch:, root:, host:)
+          return "#{repo}@#{branch}" if repo && branch
+
+          host ? "#{host}:#{root}" : root
+        end
 
         # `git@github.com:a/b.git`, `ssh://git@github.com:22/a/b`, and
         # `https://user@github.com/a/b.git` all come out as `github.com/a/b`.

@@ -97,10 +97,110 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
       expect(described_class.for(empty).repo).to eq(empty)
     end
 
-    it "keys a detached HEAD by its own path, since it has no branch to share" do
+    it "keys a detached HEAD by its own path on its own host, since it has no branch to share" do
       git(one, "checkout", "-q", "--detach")
 
-      expect(described_class.for(one).lock_key).to eq(one)
+      expect(described_class.for(one).lock_key).to eq("#{Socket.gethostname}:#{one}")
+    end
+
+    it "never gives two hosts the same path key, even for the same path" do
+      keys = %w[machine-a machine-b].map { |host| described_class.lock_key(repo: "r", branch: nil, root: "/r", host:) }
+
+      expect(keys.uniq.size).to eq(2)
+    end
+  end
+
+  # A lock planted as though another machine, with a checkout at this very
+  # path, had written it into the shared store.
+  #
+  # @param dir [String] the checkout whose path the other machine shares
+  # @param changes [Hash] fields to override on the planted record
+  # @return [Agent::Lock::Record]
+  def plant_from_elsewhere(dir, **changes)
+    planted_tree = Agent::Lock::Tree.for(dir)
+    Agent::Lock::Record.build(
+      scope: Agent::Lock::Scope.parse("lib/**", tree: planted_tree), tree: planted_tree,
+      identity: Agent::Lock::Identity.new(env: { "AGENT_ID" => "agent-elsewhere" }), intent: "elsewhere"
+    ).with(id: "lib-elsewhere", host: "another-machine", **changes)
+  end
+
+  # @param manager [Agent::Lock::Manager]
+  # @param scope [String]
+  def orphan_in(manager, scope)
+    record = manager.store.all.find { |each| each.scope == scope }
+    manager.store.update(record.with(status: Agent::Lock::Record::ORPHANED))
+  end
+
+  describe "a detached HEAD at the same path on two hosts" do
+    before { git(one, "checkout", "-q", "--detach") }
+
+    it "does not collide with the other host's lock" do
+      mine = manager_in(one, "agent-one")
+      mine.store.create(plant_from_elsewhere(one, branch: nil))
+
+      expect(mine.acquire("lib/a.rb", intent: "fixing a").status).to eq(:acquired)
+    end
+
+    it "does not collide with the other host's lock from before repo and branch were kept" do
+      mine = manager_in(one, "agent-one")
+      mine.store.create(plant_from_elsewhere(one, repo: nil, branch: nil))
+
+      expect(mine.acquire("lib/a.rb", intent: "fixing a").status).to eq(:acquired)
+    end
+  end
+
+  describe "after switching onto a branch another checkout holds the same scope on" do
+    before do
+      manager_in(one, "agent-one").acquire("lib/**", intent: "on main")
+      git(two, "checkout", "-q", "-b", "feature")
+      manager_in(two, "agent-two").acquire("lib/**", intent: "on feature")
+      git(one, "checkout", "-q", "-b", "feature")
+    end
+
+    it "releases this session's own lock rather than refusing on the other one" do
+      outcome = manager_in(one, "agent-one").release("lib/**")
+
+      aggregate_failures do
+        expect(outcome.status).to eq(:released)
+        expect(outcome.record.intent).to eq("on main")
+        expect(manager_in(two, "agent-two").store.all.map(&:intent)).to eq(["on feature"])
+      end
+    end
+
+    it "notes in this session's own lock" do
+      expect(manager_in(one, "agent-one").note("lib/**", "halfway").record.intent).to start_with("on main")
+    end
+  end
+
+  describe "resuming after a branch switch" do
+    before do
+      first = manager_in(one, "agent-one")
+      first.acquire("lib/**", intent: "on main")
+      orphan_in(first, "lib/**")
+      git(one, "checkout", "-q", "-b", "feature")
+      git(two, "checkout", "-q", "-b", "feature")
+    end
+
+    it "refuses when somebody claimed an overlapping scope on this branch meanwhile" do
+      manager_in(two, "agent-two").acquire("lib/a.rb", intent: "on feature")
+
+      outcome = manager_in(one, "agent-one").resume("lib/**")
+
+      aggregate_failures do
+        expect(outcome.status).to eq(:held)
+        expect(outcome.record.agent_id).to eq("agent-two")
+      end
+    end
+
+    it "rebinds the claim to the branch it is resumed on, where other checkouts see it" do
+      resumed = manager_in(one, "agent-one").resume("lib/**")
+
+      aggregate_failures do
+        expect(resumed.status).to eq(:resumed)
+        expect(resumed.record.branch).to eq("feature")
+        expect(manager_in(two, "agent-two").acquire("lib/a.rb", intent: "on feature").status).to eq(:held)
+        expect(manager_in(one, "agent-one").store.all.size).to eq(1)
+      end
     end
   end
 
