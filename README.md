@@ -2,17 +2,17 @@
 
 [![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml)
 
-A CLI utility `alock` that supports advisory locks on files and folders with pluggable backends (redis and file system provided out of the box, with redis being the default if it's available locally). This locking tool is meant for coding agents that share a project.
+A CLI utility `alock` that supports advisory locks on files and folders with pluggable backends (redis and file system provided out of the box, with redis being the default if it's available locally). This locking tool is meant for coding agents that share a project, whether they run on one machine or on several: with every machine pointed at one Redis, it is a distributed lock.
 
 > [!NOTE]
 >
-> Please note that `agent-lock` is part of a three-part system: [`OpenLanes`](https://github.com/kigster/openlanes) is an AI harness workflow that works by creating specs, plans, and executing the plan until one or more PRs passing CI are created, and [`agentilda-ai-setup`](https://kigster/agentilda-ai-setup) — the GitHub repo that's a mixture of BASH and Ruby installers. It comes with the [`configuration.yml`](https://github.com/kigster/agentilda-ai-setup/blob/main/configuration.example.yml) file, which determines what skills, commands, plugins, and AI coding agents are locally installed.
+> Please note that `agent-lock` is part of a three-part system: [`OpenLanes`](https://github.com/kigster/openlanes) is an AI harness workflow that works by creating specs, plans, and executing the plan until one or more PRs passing CI are created, and [`agentilda-ai-setup`](https://github.com/kigster/agentilda-ai-setup) — the GitHub repo that's a mixture of BASH and Ruby installers. It comes with the [`configuration.yml`](https://github.com/kigster/agentilda-ai-setup/blob/main/configuration.example.yml) file, which determines what skills, commands, plugins, and AI coding agents are locally installed.
 >
 > That said, you can absolutely use the `agent-lock` gem in your own environment.
 
 ## What it is
 
-`agent-lock` is a gem with one executable, `alock` (also installed as `agent-lock`). An agent runs `alock acquire <scope>` before it writes, and learns in one reply whether anybody else is working there: who, since when, and doing what. It works for separate sessions in one checkout and for the sub-agents of a single session, the harder case.
+`agent-lock` is a gem with one executable, `alock` (also installed as `agent-lock`). An agent runs `alock acquire <scope>` before it writes, and learns in one reply whether anybody else is working there: who, since when, and doing what. It works for separate sessions in one checkout, for the sub-agents of a single session, the harder case, and for agents on different machines working on one branch of one repository.
 
 Git does not help here. Two agents on one branch and one working tree never produce a conflict: the second writer simply wins, and the first one's work is gone without an error anywhere. A lock stops that, but only if every writer can be named reliably, even though an agent harness runs each command in a brand new shell. Making that name stable, and keeping claims correct when several agents ask at the same moment, is most of what this gem does.
 
@@ -24,7 +24,7 @@ Git does not help here. Two agents on one branch and one working tree never prod
 
 - **Harnesses** that launch agents over a repository and need them to stay out of each other's way.
 
-- **Supports multiple local nodes** with the same project directories, if `$REDIS_URL` is set to a non-local Redis instance (it needs to be set to the same value on all participating nodes)
+- **Teams of agents spread over several machines**, each with its own clone of the repository, at any path. Set `REDIS_URL` to the same shared Redis on every machine, and a claim on one is refused on the others. See [One repository, many machines](#one-repository-many-machines).
 
 Not for work that can have a checkout of its own. A git worktree per agent removes the sharing altogether, which is better than coordinating it. The locks are advisory: they protect a file only from agents that check. `--enforce` exists for the few files that must not move at all.
 
@@ -75,7 +75,7 @@ AGENT_ID=billing-a alock release-all                              # A's own lock
 
 ```mermaid
 sequenceDiagram
-  participant O as Orchestrator (alo)
+  participant O as Orchestrator (alock)
   participant A as Sub-agent billing-a
   participant B as Sub-agent billing-b
   participant S as Lock store (.git/agent-locks)
@@ -159,9 +159,9 @@ The fingerprint walks up from the current process until it finds an ancestor tha
 
 `alock whoami` prints the name this session would sign a lock with, its parent, and where each came from. Run it before the first claim if in doubt.
 
-### Locks live inside `.git.`
+### The file store lives inside `.git`
 
-The store is `$(git rev-parse --git-common-dir)/agent-locks`.
+With the file backend, the store is `$(git rev-parse --git-common-dir)/agent-locks`. The Redis backend keeps the same documents in Redis instead; see [Backends](#backends).
 
 | Property                                      | Why it matters                                   |
 | :-------------------------------------------- | :----------------------------------------------- |
@@ -308,8 +308,8 @@ Any command exits 2 when it cannot run at all: an empty or out-of-tree scope, a 
 ## Shell completion
 
 ```bash
-alock completion bash > "$(brew --prefix)/etc/bash_completion.d/alo"
-alock completion zsh  > "${fpath[1]}/_alo"
+alock completion bash > "$(brew --prefix)/etc/bash_completion.d/alock"
+alock completion zsh  > "${fpath[1]}/_alock"
 ```
 
 Names every command and flag `alock` currently knows, since the script is generated from the same registry the CLI runs on, rather than hand-maintained separately.
@@ -351,6 +351,28 @@ A lock is about a repository and the files in it, not about where a checkout sit
 
 The repository is named by its `origin` URL, normalized so that `git@github.com:a/b.git` and `https://github.com/a/b` agree. A repository with no `origin` is named by its root commit, and a directory outside git by its path.
 
+#### Why this makes it a distributed lock
+
+Before 3.1.0 a lock was named after the checkout's absolute path. A shared Redis did not help: `/Users/a/repo` on one laptop and `/home/b/repo` on a build box hashed to two unrelated namespaces, so each machine saw only its own locks, and two agents on two hosts could both claim `lib/billing/**` on `main` and both be told they won. Since 3.1.0, with every machine on one `REDIS_URL`, the gem has everything a distributed lock needs:
+
+| A distributed lock needs                  | How `agent-lock` provides it                                                                                                                                                                                                                                                   |
+| :---------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One name for the resource on every host   | A lock's id comes from the repository, branch and scope, which every clone computes the same way. Nothing local, such as a path or a username, goes into it                                                                                                                    |
+| One store that every host reads           | Every checkout of a repository reads and writes `agent-lock:<repository digest>` in the shared Redis                                                                                                                                                                           |
+| Mutual exclusion across hosts             | The conflict check and the write run under `agent-lock-mutex:<repository digest>`, taken with `SET NX PX` and a random token and released by compare-and-delete. The lock itself is written with `SET NX`, so two hosts after the same id cannot both create it              |
+| Recovery from a holder that disappears    | A crashed holder's mutex lease runs out within 10 seconds. A pid on another host cannot be checked, so that host's lock expires once nobody has touched it for `AGENT_LOCK_STALE_MINUTES`, and every `note` counts as a touch. `AGENT_LOCK_TTL_SECONDS` adds a hard Redis TTL |
+| A boundary on what counts as a collision  | Locks collide only on the same branch. Worktrees on their own branches stay independent, which is what a worktree is for                                                                                                                                                       |
+
+Where the guarantees stop:
+
+- **It is advisory.** A lock protects a file only from agents that check. `--enforce` freezes files on the local machine only.
+- **Every host has to reach the same Redis.** If the shared `REDIS_URL` does not answer, a command falls back to `redis://127.0.0.1:6379/0`, and that host is then working in a different store from the others without being told. When agents on several machines depend on the lock, keep the shared Redis up and check that `alock list` names it on each one.
+- **It is one Redis, not a quorum.** Lock state lives on a single instance. A failover to a replica that has not received the latest writes can lose recent claims, so this is not Redlock, and it is not meant to guard anything stronger than agents editing files.
+- **The mutex lease is not renewed.** A critical section that outlives its 10-second lease fails with an error rather than continuing unprotected, so a slow claim costs a retry, not a double grant.
+
+> [!IMPORTANT]
+> Upgrading from 3.0.0 or earlier changes the Redis namespace. Locks taken by an older version are not visible to 3.1.0, so release them before upgrading. 3.1.0 never reads the old namespace, so it never reaps those keys either: they stay in Redis until their `AGENT_LOCK_TTL_SECONDS` runs out, and with the default of `0` they stay for good. They block nobody, but they have to be deleted by hand. The file store is not affected. Its records stay in `.git/agent-locks`, still block overlapping claims in the checkout that took them, and are reaped as usual.
+
 Either way, every claim checks for conflicts and writes its lock while holding one mutex for the whole store. Refusing an atomic write of an identical scope is not enough on its own: `lib/**` and `lib/cli.rb` are different keys, and two agents claiming them at the same moment would both find the store empty and both win. The file store takes an exclusive `flock` on `.mutex` beside the locks. Redis takes `agent-lock-mutex:<repository digest>` with `SET NX PX` and a random token, and gives it back with a compare-and-delete script, so a process whose lease ran out cannot release somebody else's.
 
 > [!CAUTION]
@@ -377,7 +399,7 @@ alock acquire "config/credentials/**" "keys must not move during the migration" 
 
 ```bash
 bin/setup
-bundle exec rspec                              # 228 examples, against the file backend
+bundle exec rspec                              # 268 examples, against the file backend
 AGENT_LOCK_TEST_BACKEND=redis bundle exec rspec # the same suite, against Redis instead
 bundle exec rubocop
 ```
