@@ -16,6 +16,14 @@ module Agent
     # decisions here and the wording in the commands is what lets the whole
     # lifecycle be tested without capturing output.
     class Manager
+      # What every Manager verb returns.
+      #
+      # @!attribute [r] status
+      #   @return [Symbol] what happened, such as :acquired, :held or :not_found
+      # @!attribute [r] records
+      #   @return [Array<Record>] the records involved, the subject first
+      # @!attribute [r] message
+      #   @return [String, nil] a warning worth printing, such as a partial freeze
       Result = Data.define(:status, :records, :message) do
         # @return [Integer] what the process should exit with
         def code = %i[held refused not_found interrupted parent_scope].include?(status) ? 1 : 0
@@ -24,10 +32,23 @@ module Agent
         def record = records.first
       end
 
+      # Minutes untouched before a lock is reported STALE, and before one
+      # whose holder cannot be checked expires. AGENT_LOCK_STALE_MINUTES
+      # overrides it.
       DEFAULT_STALE_MINUTES = 120
 
+      # @!attribute [r] tree
+      #   @return [Tree] the checkout this manager works on
+      # @!attribute [r] store
+      #   @return [Store::FileSystemStore, Store::RedisStore] where its locks are kept
+      # @!attribute [r] identity
+      #   @return [Identity] who every lock it takes is signed by
       attr_reader :tree, :store, :identity
 
+      # @param tree [Tree] the checkout to work on
+      # @param identity [Identity] who the locks are signed by
+      # @param stale_minutes [Integer, nil] nil reads AGENT_LOCK_STALE_MINUTES
+      # @param store [FileSystemStore, RedisStore, nil] nil picks the tree's backend
       def initialize(tree: Tree.for, identity: Identity.current, stale_minutes: nil, store: nil)
         @tree = tree
         @store = store || Store.for(tree)
@@ -261,6 +282,8 @@ module Agent
       # this whole feature is supposed to prevent.
       #
       # @param record [Record] the lock, already created
+      # @param scope [Scope]
+      # @param wide [Boolean] freeze even a scope wider than Freeze::LIMIT files
       # @return [Result]
       def enforce_on(record, scope, wide:)
         wanted = Freeze.matches(scope, tree)
@@ -276,6 +299,8 @@ module Agent
         raise
       end
 
+      # @param wanted [Array<String>] the files the scope matched
+      # @param frozen [Array<String>] the ones `chflags` accepted
       # @return [String, nil] said only when the filesystem refused some of it
       def freeze_shortfall(wanted, frozen)
         missed = wanted.size - frozen.size
@@ -288,6 +313,7 @@ module Agent
       # died, which is information rather than a claim, and a machine that
       # rebooted should not lock its owner out of their own checkout.
       #
+      # @param scope [Scope]
       # @return [Array<Record>]
       def conflicts(scope)
         store.all.select do |record|
@@ -302,6 +328,7 @@ module Agent
       # the checkout that froze them can still see what to thaw.
       #
       # @param record [Record]
+      # @return [void]
       def orphan(record)
         local = record.local_to?(tree)
         Freeze.clear(record.frozen_paths, tree: tree) if local
@@ -310,6 +337,7 @@ module Agent
       end
 
       # @param record [Record]
+      # @return [void]
       def drop(record)
         Freeze.clear(record.frozen_paths, tree: tree) if record.local_to?(tree)
         store.delete(record)
@@ -352,6 +380,10 @@ module Agent
         result(:resumed, [adopted])
       end
 
+      # @param status [Symbol]
+      # @param records [Array<Record>]
+      # @param message [String, nil]
+      # @return [Result]
       def result(status, records, message = nil) = Result.new(status:, records:, message:)
     end
   end

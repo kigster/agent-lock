@@ -24,12 +24,14 @@ module Agent
       # message, which is written for the agent that has to fix its argument.
       class Invalid < Error; end
 
+      # The glob that claims the whole tree.
       ALL = "**"
 
       # The spellings of the whole tree, taken literally wherever the agent
       # stands.
       WHOLE_TREE = [".", "*", ALL].freeze
 
+      # The refusal for an empty scope, which is usually an unset variable.
       EMPTY = "empty scope: pass ** to claim the whole tree"
 
       # @return [String] the pattern, relative to the tree root
@@ -108,6 +110,7 @@ module Agent
         end
       end
 
+      # @param pattern [String, #to_s] a glob relative to the tree root, normalized here
       def initialize(pattern)
         @pattern = pattern.to_s.squeeze("/").delete_prefix("./")
       end
@@ -156,12 +159,17 @@ module Agent
         text.empty? ? "tree" : text[0, 60]
       end
 
+      # @return [String] the normalized pattern, relative to the tree root
       def to_s = pattern
 
+      # @param other [Object]
+      # @return [Boolean] the same pattern, so the same claim
       def ==(other) = other.is_a?(Scope) && pattern == other.pattern
 
       private
 
+      # @param outer [String] a fixed part
+      # @param inner [String] a fixed part
       # @return [Boolean] whether `outer` is `inner` or an ancestor of it
       def contains?(outer, inner)
         return true if outer.empty? || outer == inner

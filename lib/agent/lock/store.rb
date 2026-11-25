@@ -29,8 +29,11 @@ module Agent
     # and every process builds from whatever ends up on disk, never from its
     # own guess, so a race can pick either backend but never a split.
     module Store
+      # The file in a tree's store directory that records its backend.
       MARKER = "backend"
 
+      # Raised when a process asks for a backend other than the one the tree
+      # already uses, or for one that does not exist.
       class Mismatch < Error; end
 
       module_function
@@ -53,7 +56,10 @@ module Agent
         build(claim(tree, requested || default_backend), tree)
       end
 
+      # @param name [String] "file" or "redis"
+      # @param tree [Tree]
       # @return [Store::FileSystemStore, Store::RedisStore]
+      # @raise [Mismatch] for any other name
       def build(name, tree)
         case name
         when "redis" then RedisStore.new(tree)
@@ -62,6 +68,7 @@ module Agent
         end
       end
 
+      # @param tree [Tree]
       # @return [String, nil] the backend this tree already uses
       def recorded(tree)
         path = marker_path(tree)
@@ -89,6 +96,8 @@ module Agent
         name
       end
 
+      # @param tree [Tree]
+      # @return [String] where the tree's backend marker lives
       def marker_path(tree) = File.join(tree.store_dir, MARKER)
 
       # @return [String] "redis" when one answers on REDIS_URL or, failing
@@ -97,6 +106,7 @@ module Agent
         local_redis_available? ? "redis" : "file"
       end
 
+      # @return [Boolean] whether a Redis client connected without error
       def local_redis_available?
         client, error = RedisStore.create_client
         !client.nil? && error.nil?

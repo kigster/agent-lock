@@ -27,7 +27,12 @@ module Agent
     # human is typing in. Its pid and start time, hashed, are stable for as
     # long as that session lives and different for anybody else's.
     class Identity
+      # Process names skipped while walking up to the session's own process:
+      # every agent command runs in a fresh shell, so a shell is never the
+      # session itself.
       SHELLS = %w[sh bash zsh ksh csh tcsh fish dash].freeze
+      # How many ancestors the walk climbs before giving up, so a process
+      # tree of nothing but shells cannot loop it forever.
       MAX_HOPS = 10
 
       class << self
@@ -106,8 +111,10 @@ module Agent
 
       private
 
+      # @return [String, nil] AGENT_ID, when set to something
       def explicit = presence(@env["AGENT_ID"])
 
+      # @return [String, nil] AGENT_PARENT_ID, when set to something
       def declared_parent = presence(@env["AGENT_PARENT_ID"])
 
       # What this session answers to when nobody names it, which is the
@@ -125,6 +132,7 @@ module Agent
         own unless own == explicit
       end
 
+      # @return [String, nil] e.g. "session-1f4c8a02", from CLAUDE_SESSION_ID
       def session
         value = presence(@env["CLAUDE_SESSION_ID"])
         value && "session-#{value[0, 8]}"
@@ -160,6 +168,8 @@ module Agent
         end
       end
 
+      # @param value [String, nil]
+      # @return [String, nil] the value stripped, or nil when blank
       def presence(value) = value.nil? || value.strip.empty? ? nil : value.strip
     end
   end

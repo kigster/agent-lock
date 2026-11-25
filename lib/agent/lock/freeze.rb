@@ -25,6 +25,9 @@ module Agent
       # How many paths one `chflags` invocation is given.
       BATCH = 200
 
+      # Raised when a freeze cannot or should not run: not on macOS, or wider
+      # than {LIMIT} files without `wide: true`. The lock it was asked for is
+      # dropped first, so no claim is left behind half-enforced.
       class TooBroad < Error; end
 
       module_function
@@ -69,6 +72,8 @@ module Agent
       # Best effort on purpose: a path that has since been deleted or already
       # thawed is not a reason to leave the rest frozen.
       #
+      # @param paths [Array<String>, nil] relative to the tree root
+      # @param tree [Tree]
       # @return [Array<String>] what was thawed
       def clear(paths, tree:)
         return [] if paths.nil? || paths.empty?
@@ -83,6 +88,9 @@ module Agent
       # batch as frozen would leave the lock claiming protection it does not
       # have. Reporting the whole batch as failed would be just as wrong.
       #
+      # @param flag [String] `uchg` or `nouchg`
+      # @param paths [Array<String>] relative to the tree root
+      # @param tree [Tree]
       # @return [Array<String>] relative paths that are now flagged
       def chflags(flag, paths, tree)
         return [] unless supported?
@@ -92,11 +100,15 @@ module Agent
              .map { |path| path.delete_prefix("#{tree.root}/") }
       end
 
+      # @param batch [Array<String>] relative to the tree root
+      # @param tree [Tree]
       # @return [Array<String>] absolute paths that are still there to flag
       def existing(batch, tree)
         batch.map { |rel| File.join(tree.root, rel) }.select { |path| File.exist?(path) }
       end
 
+      # @param flag [String] `uchg` or `nouchg`
+      # @param absolute [Array<String>] absolute paths
       # @return [Array<String>] the ones the command accepted
       def flag_batch(flag, absolute)
         return [] if absolute.empty?
@@ -105,6 +117,8 @@ module Agent
         absolute.select { |path| run(flag, [path]) }
       end
 
+      # @param flag [String] `uchg` or `nouchg`
+      # @param paths [Array<String>] absolute paths
       # @return [Boolean] whether the command reported success
       def run(flag, paths) = system("chflags", flag, *paths, out: File::NULL, err: File::NULL) || false
     end

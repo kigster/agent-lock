@@ -5,6 +5,7 @@
 require_relative "lock/version"
 require_relative "lock/error"
 
+# The namespace this gem lives in. It defines nothing of its own.
 module Agent
   # Advisory locks for the several coding agents that end up in one checkout.
   #

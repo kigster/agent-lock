@@ -8,6 +8,7 @@ require "json"
 module Agent
   module Lock
     module CLI
+      # One class per `alock` verb, all built on {Base}.
       module Commands
         # What every command shares: the launcher it prints through, the
         # manager it delegates to, and the wording of a held lock.

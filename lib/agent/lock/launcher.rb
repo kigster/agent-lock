@@ -17,6 +17,7 @@ module Agent
     # in-process launcher expects exactly this shape, which is what makes the
     # end-to-end specs fast enough to run on every save.
     class Launcher
+      # The program name hints use when the caller does not say.
       DEFAULT_PROGRAM = "agent-lock"
 
       extend Forwardable
@@ -49,6 +50,11 @@ module Agent
       # under the test runner that says `rspec`.
       #
       # @param argv [Array<String>]
+      # @param stdin [IO]
+      # @param stdout [IO]
+      # @param stderr [IO]
+      # @param kernel [Module] receives the one `exit`
+      # @param pastel [Pastel] colours, on only when stdout is a terminal
       # @param program [String] e.g. `File.basename($PROGRAM_NAME)`
       # rubocop:disable-next Metrics/ParameterLists
       def initialize(argv = ARGV,
@@ -88,6 +94,8 @@ module Agent
 
       private
 
+      # @param msg [String]
+      # @return [void]
       def p(msg = "")
         stdout.puts(msg)
       end
