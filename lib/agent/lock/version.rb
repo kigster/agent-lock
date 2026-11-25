@@ -2,6 +2,7 @@
 
 module Agent
   module Lock
-    VERSION = "3.1.0"
+    # The gem's version, read by the gemspec and printed by `alock version`.
+    VERSION = "4.0.0"
   end
 end
