@@ -31,18 +31,15 @@ install:
 
 build: install
 
-# standardrb
+# Lint with rubocop
 lint:
-    {{ rbenv }} standardrb
+    {{ rbenv }} rubocop
 
-# Fix style with standardrb, then format the markdown
+# Autocorrect with rubocop, then format the markdown
 format:
     bundle exec rubocop -a
     bundle exec rubocop --auto-gen-config
     /usr/bin/find . -name '*.md' -exec mdformat --wrap no {} \; -print
-
-update-workflow:
-    bundle exec tilda docs -o docs/WORKFLOW.md
 
 # Run all the tests
 test *args:
@@ -73,7 +70,7 @@ version:
 clobber:
     {{ rbenv }} rake clobber
 
-# Generate documentation
+# Generate YARD docs into doc/ and open them
 doc:
     #!/usr/bin/env bash
     {{ rbenv }} rake doc
