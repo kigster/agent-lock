@@ -54,15 +54,15 @@ module Agent
       # @param path [String] a path or a glob
       # @param intent [String]
       # @param enforce [Boolean] also make the matched files unwritable
-      # @param force [Boolean] freeze even a very wide scope
+      # @param wide [Boolean] freeze even a scope wider than Freeze::LIMIT files
       # @return [Result] :acquired, or :already_mine, :held, :parent_scope or
       #   :interrupted with the records that explain why not
-      def acquire(path, intent: "unspecified", enforce: false, force: false)
+      def acquire(path, intent: "unspecified", enforce: false, wide: false)
         scope = Scope.parse(path, tree: tree)
         outcome = store.synchronize { take(scope, intent) }
         return outcome unless enforce && outcome.status == :acquired
 
-        enforce_on(outcome.record, scope, force: force)
+        enforce_on(outcome.record, scope, wide: wide)
       end
 
       # @param path [String]
@@ -262,9 +262,9 @@ module Agent
       #
       # @param record [Record] the lock, already created
       # @return [Result]
-      def enforce_on(record, scope, force:)
+      def enforce_on(record, scope, wide:)
         wanted = Freeze.matches(scope, tree)
-        frozen = Freeze.apply(wanted, tree: tree, force: force)
+        frozen = Freeze.apply(wanted, tree: tree, wide: wide)
         updated = record.with(frozen_paths: frozen)
         store.update(updated)
 

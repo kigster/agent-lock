@@ -53,12 +53,15 @@ module Agent
 
       # @param paths [Array<String>] relative to the tree root
       # @param tree [Tree]
-      # @param force [Boolean] allow a freeze wider than LIMIT
+      # @param wide [Boolean] allow a freeze wider than LIMIT
       # @return [Array<String>] what was frozen
-      def apply(paths, tree:, force: false)
+      def apply(paths, tree:, wide: false)
         raise TooBroad, "--enforce needs macOS; this is #{RUBY_PLATFORM}" unless supported?
         return [] if paths.empty?
-        raise TooBroad, "#{paths.size} files is wider than a freeze should be" if paths.size > LIMIT && !force
+
+        if paths.size > LIMIT && !wide
+          raise TooBroad, "#{paths.size} files is wider than a freeze should be (limit #{LIMIT}); pass --allow-wide"
+        end
 
         chflags("uchg", paths, tree)
       end

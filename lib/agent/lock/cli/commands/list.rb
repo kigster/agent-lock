@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "base"
+require_relative "tree_command"
 
 module Agent
   module Lock
@@ -12,14 +12,14 @@ module Agent
         # Live claims and interrupted work are listed apart. An orphan blocks
         # nobody, so counting it as held told a reader the tree was busier
         # than it was, and gave them no way to see which locks were real.
-        class List < Base
-          desc "Every live lock, and any interrupted work"
+        class List < TreeCommand
+          desc "Every lock in this repository, live and interrupted"
 
-          option :json, type: :boolean, default: false, desc: "Machine-readable output"
+          option :json, type: :boolean, default: false, desc: "Print every record as JSON, with status and stale"
 
           example ["", "--json"]
 
-          # @param options [Hash]
+          # @param options [Hash] `:dir`, `:json`
           # @return [Manager::Result]
           def call(**options)
             manager = manager(options[:dir])
@@ -38,6 +38,7 @@ module Agent
 
           # @param records [Array<Record>]
           # @param stale_minutes [Integer]
+          # @return [void]
           def report_listing(records, stale_minutes)
             held, interrupted = records.partition(&:active?)
 
@@ -56,6 +57,7 @@ module Agent
           #
           # @param records [Array<Record>] orphaned locks
           # @param stale_minutes [Integer]
+          # @return [void]
           def report_interrupted(records, stale_minutes)
             say("Interrupted (#{records.size}):")
             records.each do |record|

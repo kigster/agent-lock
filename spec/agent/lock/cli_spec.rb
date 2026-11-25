@@ -418,7 +418,7 @@ RSpec.describe Agent::Lock::CLI do
 
       aggregate_failures do
         expect(command).to have_exit_status(1)
-        expect(command.stderr).to include("--force")
+        expect(command.stderr).to include("--overwrite")
       end
     end
   end
@@ -450,7 +450,46 @@ RSpec.describe Agent::Lock::CLI do
     end
 
     it "describes itself in the command list" do
-      expect(agent_lock("--help").output).to match(/^  completion\s+Print a shell completion script/)
+      expect(agent_lock("--help").output).to match(/^  completion\s+Print a bash or zsh completion script/)
+    end
+
+    # dry-cli prefixes each example with $PROGRAM_NAME, which under the test
+    # runner is `rspec`, so only what follows it is ours to assert on.
+    it "shows each install example once, naming the program" do
+      examples = agent_lock("completion --help").output.lines.grep(/completion (bash|zsh)/)
+
+      expect(examples.map { |line| line.strip.sub(/\A\S+ /, "") }).to eq(
+        [
+          'completion bash > "$(brew --prefix)/etc/bash_completion.d/alock"',
+          'completion zsh  > "${fpath[1]}/_alock"'
+        ]
+      )
+    end
+  end
+
+  # `--dir` picks the checkout, so only commands that touch a lock store offer it.
+  describe "the --dir option" do
+    %w[acquire release check list mine release-all break note resume].each do |verb|
+      it "is offered by #{verb}" do
+        expect(agent_lock("#{verb} --help").output).to include("--dir=VALUE")
+      end
+    end
+
+    ["version", "whoami", "skills path", "skills install"].each do |verb|
+      it "is not offered by #{verb}, which never reads a checkout" do
+        expect(agent_lock("#{verb} --help").output).not_to include("--dir")
+      end
+    end
+  end
+
+  describe "flags named for what they do" do
+    it "offers --allow-wide on acquire, and no --force anywhere" do
+      aggregate_failures do
+        expect(agent_lock("acquire --help").output).to include("--[no-]allow-wide")
+        expect(agent_lock("acquire --help").output).not_to include("-force")
+        expect(agent_lock("skills install --help").output).to include("--[no-]overwrite")
+        expect(agent_lock("skills install --help").output).not_to include("-force")
+      end
     end
   end
 

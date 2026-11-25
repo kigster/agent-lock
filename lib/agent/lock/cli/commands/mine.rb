@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "base"
+require_relative "tree_command"
 
 module Agent
   module Lock
@@ -9,12 +9,14 @@ module Agent
         # What this session holds, and what its sub-agents hold, since those
         # are what its `release-all` would take with it. Never its parent's:
         # a sub-agent that saw those as its own could release them.
-        class Mine < Base
+        class Mine < TreeCommand
           desc "Locks held by this session and its sub-agents"
 
-          option :json, type: :boolean, default: false, desc: "Machine-readable output"
+          option :json, type: :boolean, default: false, desc: "Print the records as a JSON array"
 
-          # @param options [Hash]
+          example ["", "--json"]
+
+          # @param options [Hash] `:dir`, `:json`
           # @return [Manager::Result]
           def call(**options)
             manager = manager(options[:dir])

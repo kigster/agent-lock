@@ -62,10 +62,10 @@ module Agent
       # that links every skill it manages; replacing either without being
       # asked is the silent last-writer-wins this gem exists to prevent.
       #
-      # @param force [Boolean] replace a copy that differs; never a symlink
+      # @param overwrite [Boolean] replace a copy that differs; never a symlink
       # @return [Result] :installed, :current, :differs or :linked
-      def install(force: false)
-        refused = refusal(force)
+      def install(overwrite: false)
+        refused = refusal(overwrite)
         return refused if refused
 
         FileUtils.rm_rf(target)
@@ -76,13 +76,13 @@ module Agent
 
       private
 
-      # @param force [Boolean]
+      # @param overwrite [Boolean]
       # @return [Result, nil] why nothing should be copied, or nil to go ahead
-      def refusal(force)
+      def refusal(overwrite)
         return result(:linked) if File.symlink?(target)
         return result(:current) if current?
 
-        result(:differs) if File.exist?(target) && !force
+        result(:differs) if File.exist?(target) && !overwrite
       end
 
       # @param status [Symbol]

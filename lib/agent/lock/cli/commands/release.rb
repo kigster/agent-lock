@@ -1,19 +1,22 @@
 # frozen_string_literal: true
 
-require_relative "base"
+require_relative "tree_command"
 
 module Agent
   module Lock
     module CLI
       module Commands
         # Give a scope back.
-        class Release < Base
-          desc "Release a lock you hold"
+        class Release < TreeCommand
+          desc "Give back a lock you hold, thawing any files it froze"
 
           argument :scope, required: true, desc: "The path or glob you locked"
 
-          example ["workflow/**", "lib/agent/lock/cli.rb"]
+          example ["'lib/billing/**'", "lib/billing/tax.rb"]
 
+          # @param scope [String] the scope exactly as it was claimed
+          # @param options [Hash] `:dir`
+          # @return [Manager::Result] :released, :not_found or :refused
           def call(scope:, **options)
             result = manager(options[:dir]).release(scope)
 

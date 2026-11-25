@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "base"
+require_relative "tree_command"
 
 module Agent
   module Lock
@@ -8,18 +8,18 @@ module Agent
       module Commands
         # Ask before writing. Exits 1 when anything overlapping is held, so a
         # shell script can gate on it without parsing anything.
-        class Check < Base
-          desc "Say who holds a path; exits 1 if it is held"
+        class Check < TreeCommand
+          desc "Say who holds a path; exit 1 if another agent does"
 
           argument :scope, required: true, desc: "A path, a directory, or a glob"
 
-          option :json, type: :boolean, default: false, desc: "Machine-readable output"
+          option :json, type: :boolean, default: false, desc: "Print the matching locks as a JSON array"
 
-          example ["workflow/**", "lib/agent/lock/cli.rb --json"]
+          example ["lib/billing/tax.rb", "'lib/**' --json"]
 
           # @param scope [String]
-          # @param options [Hash]
-          # @return [Manager::Result]
+          # @param options [Hash] `:dir`, `:json`
+          # @return [Manager::Result] :free, :mine or :held
           def call(scope:, **options)
             manager = manager(options[:dir])
             result = manager.check(scope)
@@ -33,6 +33,7 @@ module Agent
           # @param scope [String] as the user typed it
           # @param json [Boolean]
           # @param stale_minutes [Integer]
+          # @return [void]
           def report(result, scope, json:, stale_minutes:)
             case result.status
             when :free then say(json ? "[]" : "FREE #{scope}")
