@@ -1,0 +1,11 @@
+--title "agent-lock: advisory locks for AI coding agents"
+--markup markdown
+--markup-provider redcarpet
+--readme README.md
+--output-dir doc
+--protected
+--no-private
+lib/**/*.rb
+-
+CHANGELOG.md
+LICENSE.txt

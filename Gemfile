@@ -15,6 +15,8 @@ group :development, :test do
   gem "rubocop-rspec"
   gem "simplecov"
   gem "yard"
+  # GitHub-flavoured Markdown (fenced code, tables) for the README in `rake doc`.
+  gem "redcarpet"
 
   # End-to-end specs run the CLI in this process rather than forking one, which
   # is what the Launcher's injected streams are for.

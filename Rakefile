@@ -12,7 +12,7 @@ end
 
 desc "Clean all temporary files"
 task :clean do
-  shell("rm -rf pkg/ tmp/ coverage/ doc/ ")
+  shell("rm -rf pkg/ tmp/ coverage/ doc/ .yardoc/")
 end
 
 desc "Build the gem locally into pkg/"
@@ -32,11 +32,18 @@ end
 desc "Build the gem and set the permissions"
 task build: :permissions
 
-desc "Generate yard documentation"
-YARD::Rake::YardocTask.new(:doc) do |t|
-  t.files = %w[lib/**/*.rb exe/*.rb - README.md CHANGELOG.md AGENTS.md LICENSE.txt]
-  t.options.unshift("--title", '"FlowEngine — DSL + AST for buildiong complex flows in Ruby."')
-  t.after = -> { exec("open doc/index.html") } if RUBY_PLATFORM.match?(/darwin/)
+# Files, title and markup come from .yardopts, so `yard doc`, `yard server`
+# and this task all build the same site. The output, doc/, is git-ignored.
+YARD::Rake::YardocTask.new(:yard)
+
+desc "Generate the YARD documentation into doc/ and open doc/index.html"
+task doc: :yard do
+  index = File.expand_path("doc/index.html", __dir__)
+  opener = RUBY_PLATFORM.include?("darwin") ? "open" : "xdg-open"
+
+  # An open that fails, on a headless box or in CI, is not a failed build:
+  # the docs are on disk either way.
+  system(opener, index) || warn("Documentation written to #{index}")
 end
 
 RSpec::Core::RakeTask.new(:spec)
