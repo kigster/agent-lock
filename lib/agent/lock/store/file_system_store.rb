@@ -4,6 +4,7 @@ require_relative "../error"
 require_relative "../record"
 
 require "fileutils"
+require "securerandom"
 
 module Agent
   module Lock
@@ -98,11 +99,15 @@ module Agent
         # reader never sees half a document, and so a crash mid-write leaves
         # the previous version rather than nothing.
         #
+        # The temp name is unique per write, not per process: threads in one
+        # process (a facade) used to share `<pid>.tmp`, and the first rename
+        # left the others renaming a file that was gone.
+        #
         # @param record [Record]
         # @return [void]
         def update(record)
           path = record.path || path_for(record.id)
-          temp = "#{path}.#{Process.pid}.tmp"
+          temp = "#{path}.#{Process.pid}.#{SecureRandom.hex(6)}.tmp"
           File.write(temp, record.to_markdown)
           File.rename(temp, path)
         end
