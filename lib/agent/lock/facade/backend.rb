@@ -2,6 +2,7 @@
 
 require "redis"
 require_relative "../error"
+require_relative "../store"
 require_relative "../store/file_system_store"
 require_relative "../store/redis_store"
 require_relative "strategies"
@@ -39,9 +40,22 @@ module Agent
           freeze
         end
 
+        # Bound by the checkout's backend marker, exactly like `alock`: a
+        # virgin tree is claimed for this backend, so the CLI follows the
+        # facade there, and a tree already claimed for the other backend is
+        # refused. Silently using another store would let a facade and an
+        # `alock` in one checkout both "acquire" the same scope.
+        #
         # @param tree [Tree]
         # @return [Store::FileSystemStore, Store::RedisStore] a store over `tree`
+        # @raise [Store::Mismatch] when the tree's locks live in the other backend
         def store_for(tree)
+          established = Store.claim(tree, name)
+          unless established == name
+            raise Store::Mismatch, "this tree's locks live in #{established}, but this facade uses #{name}; " \
+                                   "build it with strategies: %w[#{established}]"
+          end
+
           return Store::FileSystemStore.new(tree) if name == "file"
 
           Store::RedisStore.new(tree, client: @client, url: redis_url)
@@ -63,14 +77,19 @@ module Agent
           raise RedisUnavailableError, "Redis did not answer on #{redis_url}"
         end
 
-        # @return [::Redis, nil] a client that has answered once, or nil
+        # Probes with a short-timeout client, then hands back one with the
+        # gem's default timeouts: the probe's 0.2s would otherwise apply to
+        # every lock operation on a slow, remote Redis.
+        #
+        # @return [::Redis, nil] a working client once Redis answered, or nil
         def connect
-          client = ::Redis.new(url: redis_url, timeout: PROBE_TIMEOUT, connect_timeout: PROBE_TIMEOUT)
-          client.ping
-          client
+          probe = ::Redis.new(url: redis_url, timeout: PROBE_TIMEOUT, connect_timeout: PROBE_TIMEOUT)
+          probe.ping
+          ::Redis.new(url: redis_url)
         rescue ::Redis::BaseError, SystemCallError, SocketError
-          close_quietly(client)
           nil
+        ensure
+          close_quietly(probe)
         end
 
         # @param client [::Redis, nil]

@@ -203,6 +203,31 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
     it "returns not_found when there is nothing to resume" do
       expect(facade.resume("workflow/**", dir: checkout).status).to eq(:not_found)
     end
+
+    it "takes back interrupted work, notes and all" do
+      facade.acquire("workflow/**", "half done", dir: checkout)
+      facade.note("workflow/**", "stopped midway", dir: checkout)
+      kill_holder(facade)
+
+      result = facade.resume("workflow/**", dir: checkout, agent_id: "rey-frontend")
+
+      expect([result.status, result.record.agent_id]).to eq([:resumed, "rey-frontend"])
+    end
+  end
+
+  describe "the checkout's backend marker" do
+    it "claims a new checkout for the facade's backend, so alock follows it" do
+      facade.list(dir: checkout)
+
+      expect(Agent::Lock::Store.recorded(tree)).to eq("file")
+    end
+
+    it "refuses a checkout already claimed for the other backend" do
+      Agent::Lock::Store.claim(tree, "redis")
+
+      expect { facade.acquire("workflow/**", dir: checkout) }
+        .to raise_error(Agent::Lock::Store::Mismatch, /live in redis, but this facade uses file/)
+    end
   end
 
   describe "#whoami" do
@@ -270,6 +295,27 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
       expect(outcomes.count(:acquired)).to eq(1)
       expect(outcomes.count(:refused)).to eq(7)
     end
+
+    # Each list reaps, so every thread rewrites the same orphaned record. A
+    # temp file named after the pid alone was shared by all of them, and
+    # every rename but the first raised Errno::ENOENT.
+    it "lets many threads reap the same orphan at once without raising" do
+      facade.acquire("workflow/**", "half done", dir: checkout)
+      facade.note("workflow/**", "stopped midway", dir: checkout)
+      kill_holder(facade)
+
+      errors = in_threads(8, 10) { facade.list(dir: checkout) }
+
+      expect(errors).to be_empty
+    end
+
+    it "lets many threads note one lock at once without raising" do
+      facade.acquire("workflow/**", dir: checkout)
+
+      errors = in_threads(8, 10) { |index| facade.note("workflow/**", "step #{index}", dir: checkout) }
+
+      expect(errors).to be_empty
+    end
   end
 
   describe "memoized facades" do
@@ -314,6 +360,24 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
     :acquired
   rescue Agent::Lock::Refused
     :refused
+  end
+
+  # @return [Array<Exception>] whatever the block raised, across every thread
+  def in_threads(threads, times)
+    gate = Queue.new
+    workers = Array.new(threads) do |index|
+      Thread.new do
+        gate.pop
+        Array.new(times) do
+          yield(index)
+          nil
+        rescue StandardError => e
+          e
+        end.compact
+      end
+    end
+    threads.times { gate << true }
+    workers.flat_map(&:value)
   end
 
   def kill_holder(holder)

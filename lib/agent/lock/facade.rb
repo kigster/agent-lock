@@ -8,7 +8,9 @@ require_relative "facade/memo"
 module Agent
   # {Facade} and the process-wide facades {.local} and {.distributed}.
   module Lock
-    # Every `alock` command as a method, run in this process: no fork, no exec.
+    # Every `alock` command as a method, run in this process, so a caller
+    # pays for no new Ruby process per call. (`git` and `ps` still run, as
+    # they do under the CLI, to find the checkout and check holders.)
     #
     # One facade is one locker. It picks its backend when it is built and
     # keeps it, so every thread calling it takes locks in the same store. A
@@ -20,8 +22,10 @@ module Agent
     # serializes the writes.
     #
     # A lock method returns the {Manager::Result} on success. Where the CLI
-    # would print a refusal on stderr and exit 1, it raises {Refused}, whose
-    # `result` is the same {Manager::Result}.
+    # would print a refusal on stderr, it raises {Refused}, whose `result` is
+    # the same {Manager::Result}. `:not_found` from {#release},
+    # {#break_lock} and {#resume} is returned, although the CLI exits 1 on
+    # it: nothing was there, so nothing was refused.
     #
     # Every lock method also takes these keywords, which override the
     # facade's defaults for that one call:
@@ -31,9 +35,10 @@ module Agent
     # - `parent_id:` [String] that holder's parent session
     # - `stale_minutes:` [Integer] when an unverifiable lock counts as stale
     #
-    # The facade does not read or write the checkout's backend marker, so
-    # give every process that must see the same locks the same strategies
-    # and Redis URL.
+    # The checkout's backend marker binds a facade just as it binds `alock`:
+    # a facade claims a virgin checkout for its backend, and raises
+    # {Store::Mismatch} in one already claimed for the other, so a facade
+    # and the CLI can never take the same scope in two stores.
     #
     # @example File store, signed by a sub-agent
     #   locks = Agent::Lock.local
@@ -84,8 +89,8 @@ module Agent
       # @raise [Scope::Invalid] when the scope is empty or outside the checkout
       # @raise [Freeze::TooBroad] when `enforce` exceeds the limit without `allow_wide`
       def acquire(scope, intent = nil, enforce: false, allow_wide: false, **session)
-        manager = @session.manager(**session)
-        Refusal.check!(manager.acquire(scope, intent: intent || "unspecified", enforce:, wide: allow_wide))
+        result = @session.manager(**session).acquire(scope, intent: intent || "unspecified", enforce:, wide: allow_wide)
+        Refusal.check!(result, scope:)
       end
 
       # `alock release`.
@@ -94,7 +99,7 @@ module Agent
       # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
       # @return [Manager::Result] `:released`, or `:not_found` when nothing is locked there
       # @raise [Refused] when another agent holds it
-      def release(scope, **session) = Refusal.check!(@session.manager(**session).release(scope))
+      def release(scope, **session) = Refusal.check!(@session.manager(**session).release(scope), scope:)
 
       # `alock check`: may I write here?
       #
@@ -102,7 +107,7 @@ module Agent
       # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
       # @return [Manager::Result] `:free`, or `:mine`
       # @raise [Refused] when another agent holds an overlapping scope
-      def check(scope, **session) = Refusal.check!(@session.manager(**session).check(scope))
+      def check(scope, **session) = Refusal.check!(@session.manager(**session).check(scope), scope:)
 
       # `alock list`.
       #
@@ -146,8 +151,9 @@ module Agent
       # @param scope [String]
       # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
       # @return [Manager::Result] `:resumed`, or `:not_found` when there is nothing to resume
-      # @raise [Refused] when another agent holds an overlapping scope
-      def resume(scope, **session) = Refusal.check!(@session.manager(**session).resume(scope))
+      # @raise [Refused] when another agent holds an overlapping scope, or the
+      #   interrupted work could not be moved onto this scope
+      def resume(scope, **session) = Refusal.check!(@session.manager(**session).resume(scope), scope:)
 
       # `alock whoami`: who a lock taken through this facade would name.
       #

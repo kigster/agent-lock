@@ -39,7 +39,7 @@ Or add `gem "agent-lock"` to a Gemfile.
 
 ### From Ruby
 
-The same commands are methods on `Agent::Lock::Facade`, run in your process with no fork or exec. Each returns the `Manager::Result` (`status`, `records`, `record`). Where the command would refuse and exit 1, the method raises `Agent::Lock::Refused`: the message says who holds the scope, and `result` is the `Manager::Result` behind it. Releasing or breaking a free scope is not a refusal and returns `:not_found`.
+The same commands are methods on `Agent::Lock::Facade`, run in your process, so no Ruby process is started per call. Each returns the `Manager::Result` (`status`, `records`, `record`). Where the command would print a refusal, the method raises `Agent::Lock::Refused`: the message says who holds the scope, and `result` is the `Manager::Result` behind it. Releasing, breaking or resuming a free scope is not a refusal: it returns `:not_found`, although the command exits 1.
 
 ```ruby
 require "agent/lock"
@@ -67,7 +67,7 @@ end
 
 `strategies` are tried in order. `filesystem` is another name for `file`. A list that is only `redis` raises `Agent::Lock::RedisUnavailableError` (a `RuntimeError`) at construction when that URL does not answer.
 
-A facade is frozen and builds a fresh `Manager` per call, so one instance can be shared by any number of threads. `Agent::Lock.local` and `Agent::Lock.distributed` are memoized separately, built once even when several threads ask at the same time, and a `distributed` that failed to connect is retried on the next call. `Facade.new` and `Agent::Lock.facade` each build a fresh facade and leave those two in place. Two facades pointed at two Redis URLs keep separate locks. A facade uses the backend it resolved and leaves the checkout's backend marker untouched, so every process that must see the same locks has to be given the same strategies and the same URL.
+A facade is frozen and builds a fresh `Manager` per call, so one instance can be shared by any number of threads. `Agent::Lock.local` and `Agent::Lock.distributed` are memoized separately, built once even when several threads ask at the same time, and a `distributed` that failed to connect is retried on the next call. `Facade.new` and `Agent::Lock.facade` each build a fresh facade and leave those two in place. Two facades pointed at two Redis URLs keep separate locks. The checkout's backend marker binds a facade as it binds `alock`: a facade claims a new checkout for its backend, and raises `Agent::Lock::Store::Mismatch` in one already claimed for the other, so a facade and the CLI never split one checkout across two stores.
 
 Every lock method takes `dir:`, `agent_id:`, `parent_id:` and `stale_minutes:`, overriding the facade's defaults for that call; any other keyword raises `ArgumentError`. `check`, `list`, `mine`, `release`, `release_all`, `resume`, `whoami`, `skills_path`, `skills_install` and `version` take the same arguments as the command. `break` is `break_lock` (it returns the result; the command succeeded). `acquire` takes `enforce:` and `allow_wide:`. `skills_install` takes `into:`, `agent:` (the `--for` flag) and `overwrite:`. `whoami` returns the `Identity` the lock would be signed with.
 

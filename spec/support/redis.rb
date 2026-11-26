@@ -10,6 +10,11 @@ module RedisHelpers
   # work, or this suite's own default-backend probing, lives in.
   TEST_REDIS_URL = "redis://127.0.0.1:6379/15"
 
+  # A second database the suite owns, for specs that need two separate Redis
+  # lockers (facade_redis_spec.rb). Fixed for the same reason, and flushed
+  # only by those specs.
+  SECOND_TEST_REDIS_URL = "redis://127.0.0.1:6379/14"
+
   # @param url [String]
   # @return [Boolean]
   def redis_reachable?(url)

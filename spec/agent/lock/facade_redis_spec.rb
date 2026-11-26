@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 RSpec.describe Agent::Lock::Facade, type: :checkout do
-  let(:url_a) { "redis://127.0.0.1:6379/14" }
-  let(:url_b) { "redis://127.0.0.1:6379/15" }
+  let(:url_a) { RedisHelpers::SECOND_TEST_REDIS_URL }
+  let(:url_b) { RedisHelpers::TEST_REDIS_URL }
 
   before do
     skip "no Redis on #{url_a}" unless redis_reachable?(url_a)
@@ -49,6 +49,24 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
     end.map(&:value)
 
     expect(outcomes.tally).to eq(acquired: 1, refused: 7)
+  end
+
+  # The probe's 0.2s timeout would make every lock operation on a slow,
+  # remote Redis fail with Redis::TimeoutError.
+  it "works through a client with the gem's default timeout, not the probe's" do
+    store = Agent::Lock::Facade::Backend.new(strategies: %w[redis], redis_url: url_a).store_for(tree)
+
+    expect(store.client._client.config.read_timeout).to eq(Redis.new(url: url_a)._client.config.read_timeout)
+  end
+
+  # An orchestrator on the facade beside sub-agents on `alock`: both must
+  # land in one store, or both "acquire" the same scope.
+  it "refuses a checkout alock already claimed for the file store" do
+    Agent::Lock::Store.claim(tree, "file")
+    facade = described_class.new(strategies: %w[redis file], redis_url: url_a)
+
+    expect { facade.acquire("workflow/**", dir: checkout) }
+      .to raise_error(Agent::Lock::Store::Mismatch, /live in file/)
   end
 
   it "shares locks when two facades are given the same URL" do

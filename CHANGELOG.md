@@ -9,6 +9,9 @@
 
 ### Fixed
 
+- The file store no longer raises `Errno::ENOENT` when several threads in one process rewrite the same lock (reaping, noting): each write gets its own temp file instead of one per process.
+- A facade is bound by the checkout's backend marker like `alock`: it claims a new checkout for its backend and raises `Store::Mismatch` in one claimed for the other, so a facade and the CLI never take one scope in two stores.
+- A facade's Redis client uses the gem's default timeouts; the 0.2s timeout applies only to the connection probe.
 - A fingerprint identity no longer contains spaces when the session's process has retitled itself (macOS reports a Claude Code background job as `claude bg-spare`). Only the first word is kept, so the holder id changes for such sessions.
 
 ## [4.0.0] - 2026-11-24
