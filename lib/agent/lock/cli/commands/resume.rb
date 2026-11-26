@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "base"
+require_relative "tree_command"
 
 module Agent
   module Lock
@@ -11,11 +11,16 @@ module Agent
         # A lock whose holder died is orphaned rather than deleted when it has
         # notes in it. This takes it back, prints what the last session wrote,
         # and makes it a live claim again under the current identity.
-        class Resume < Base
-          desc "Take back a lock a crash or a reboot interrupted"
+        class Resume < TreeCommand
+          desc "Take back work a crash or reboot interrupted, notes and all"
 
-          argument :scope, required: true, desc: "The path or glob to pick up"
+          argument :scope, required: true, desc: "The scope of the interrupted lock"
 
+          example ["'db/**'"]
+
+          # @param scope [String]
+          # @param options [Hash] `:dir`
+          # @return [Manager::Result] :resumed, :not_found, :held or :interrupted
           def call(scope:, **options)
             manager = manager(options[:dir])
             result = manager.resume(scope)
@@ -28,6 +33,7 @@ module Agent
           # @param result [Manager::Result]
           # @param scope [String] as typed
           # @param stale_minutes [Integer]
+          # @return [void]
           def report(result, scope, stale_minutes)
             case result.status
             when :not_found then say("NOTHING TO RESUME #{scope}")

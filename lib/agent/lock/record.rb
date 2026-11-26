@@ -26,15 +26,62 @@ module Agent
     #     ---
     #     Rewriting the installer's filter pair.
     class Record
+      # The front-matter keys, in the order they are written. Each one is
+      # also a reader on the record.
       FIELDS = %i[id agent_id parent_agent_id scope tree repo branch worktree pid started host
                   created_at updated_at status frozen_paths].freeze
 
+      # The status of a live claim.
       ACTIVE = "active"
+
+      # The status of a lock whose holder died with notes in it: it blocks
+      # nobody, but is kept until somebody resumes or breaks it.
       ORPHANED = "orphaned"
+
+      # What fences the YAML front matter off from the body.
       SEPARATOR = "---"
+
+      # The heading `note` appends under. Its presence is what makes a dead
+      # holder's lock worth orphaning rather than deleting.
       NOTES_HEADING = "## Progress"
 
-      attr_reader(*FIELDS, :intent, :path)
+      # @!attribute [r] id
+      #   @return [String] `<scope slug>-<digest>`, the same on every clone of a branch
+      # @!attribute [r] agent_id
+      #   @return [String] who holds it, see {Identity#id}
+      # @!attribute [r] parent_agent_id
+      #   @return [String, nil] the session that spawned the holder, if any
+      # @!attribute [r] scope
+      #   @return [String] the normalized glob, relative to the tree root
+      # @!attribute [r] tree
+      #   @return [String] the absolute root of the checkout that took it
+      # @!attribute [r] repo
+      #   @return [String, nil] the repository it was taken in, see {Tree#repo}
+      # @!attribute [r] branch
+      #   @return [String, nil] the branch it was taken on; nil on a detached HEAD
+      # @!attribute [r] worktree
+      #   @return [Boolean] whether the checkout was a linked worktree
+      # @!attribute [r] pid
+      #   @return [Integer, nil] the holder's session process, used to reap it
+      # @!attribute [r] started
+      #   @return [String, nil] that process's start time, so a recycled pid is not mistaken for it
+      # @!attribute [r] host
+      #   @return [String, nil] the machine the holder runs on
+      # @!attribute [r] created_at
+      #   @return [String] ISO 8601, UTC
+      # @!attribute [r] updated_at
+      #   @return [String, nil] ISO 8601, UTC, the last note or resume
+      # @!attribute [r] status
+      #   @return [String] {ACTIVE} or {ORPHANED}
+      # @!attribute [r] frozen_paths
+      #   @return [Array<String>] files `--enforce` froze, so a release can thaw them
+      FIELDS.each { |field| attr_reader(field) }
+
+      # @return [String] the body: what the holder is doing, then its notes
+      attr_reader :intent
+
+      # @return [String, nil] the file it was read from; nil outside the file store
+      attr_reader :path
 
       class << self
         # @param scope [Scope]
@@ -57,6 +104,8 @@ module Agent
         # store, and so that two checkouts of one branch, on any machine, are
         # after the same id and cannot both win it.
         #
+        # @param tree [Tree]
+        # @param scope [Scope]
         # @return [String]
         def id_for(tree, scope)
           digest = Digest::SHA256.hexdigest("#{tree.lock_key}\0#{scope}")[0, 8]
@@ -72,6 +121,7 @@ module Agent
         end
 
         # @param text [String] a lock document, from a file or from Redis
+        # @param path [String, nil] the file it was read from, for the file store
         # @return [Record, nil]
         def parse(text, path: nil)
           _, front, body = text.to_s.split(/^#{SEPARATOR}\s*$/, 3)
@@ -84,6 +134,9 @@ module Agent
         end
       end
 
+      # @param intent [String] the body: what the holder is doing, plus its notes
+      # @param path [String, nil] the file it was read from, for the file store
+      # @param fields [Hash{Symbol => Object}] any of {FIELDS}
       def initialize(intent: "", path: nil, **fields)
         FIELDS.each { |field| instance_variable_set(:"@#{field}", fields[field]) }
         @frozen_paths = Array(@frozen_paths)
@@ -91,6 +144,7 @@ module Agent
         @path = path
       end
 
+      # @param intent [String] the body, unchanged unless given
       # @param changes [Hash] fields to replace
       # @return [Record] a copy, since a record on disk is not edited in place
       def with(intent: self.intent, **changes)
@@ -234,18 +288,30 @@ module Agent
 
       private
 
+      # @param identity [Identity]
+      # @return [Boolean]
       def mine?(identity) = agent_id == identity.id
 
       # The lock belongs to the session that spawned this one.
+      #
+      # @param identity [Identity]
+      # @return [Boolean]
       def ancestor_of?(identity) = !identity.parent_id.nil? && agent_id == identity.parent_id
 
       # The lock belongs to a sub-agent this session spawned.
+      #
+      # @param identity [Identity]
+      # @return [Boolean]
       def descendant_of?(identity) = !parent_agent_id.nil? && parent_agent_id == identity.id
 
+      # @return [Boolean] true too when the record names no host
       def same_host? = host.nil? || host == Socket.gethostname
 
       # A lock with no readable timestamp is left alone rather than guessed
       # at: reaping on a parse error would delete live claims.
+      #
+      # @param minutes [Integer]
+      # @return [Boolean]
       def untouched_for?(minutes)
         touched = updated_at || created_at
         return false if touched.nil?

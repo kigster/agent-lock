@@ -11,7 +11,10 @@ module Agent
       # Locks as files, which is the default and the one that needs nothing
       # installed. See Tree#store_dir for why they live inside `.git`.
       class FileSystemStore
+        # Every lock file ends in this, which is what `all` globs for.
         SUFFIX = ".lock.md"
+
+        # The file `flock`ed around every claim, beside the locks.
         MUTEX = ".mutex"
 
         # Seconds. A claim's critical section is a directory scan and one
@@ -20,6 +23,7 @@ module Agent
 
         attr_reader :tree
 
+        # @param tree [Tree] the checkout whose store directory holds the locks
         def initialize(tree)
           @tree = tree
         end

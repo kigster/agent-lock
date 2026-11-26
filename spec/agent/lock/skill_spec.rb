@@ -69,9 +69,9 @@ RSpec.describe Agent::Lock::Skill do
         end
       end
 
-      it "replaces it when forced" do
+      it "replaces it when told to overwrite" do
         aggregate_failures do
-          expect(skill.install(force: true).status).to eq(:installed)
+          expect(skill.install(overwrite: true).status).to eq(:installed)
           expect(File.read(File.join(target, "SKILL.md"))).to include("The bundled copy.")
         end
       end
@@ -90,9 +90,9 @@ RSpec.describe Agent::Lock::Skill do
 
       after { FileUtils.rm_rf(elsewhere) }
 
-      it "leaves the link alone, even when forced" do
+      it "leaves the link alone, even when told to overwrite" do
         aggregate_failures do
-          expect(skill.install(force: true).status).to eq(:linked)
+          expect(skill.install(overwrite: true).status).to eq(:linked)
           expect(File.readlink(target)).to eq(elsewhere)
         end
       end

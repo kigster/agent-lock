@@ -33,13 +33,14 @@ module Agent
             inferred: "inferred: the session this runs in, since AGENT_ID names somebody else"
           }.freeze
 
-          desc "Say who a lock taken now would be held by, and where that came from"
+          desc "Print the id your locks would carry, its parent, and their source"
 
-          option :json, type: :boolean, default: false, desc: "Machine-readable output"
+          option :json, type: :boolean, default: false, desc: "Print id, source, parent_id and parent_source as JSON"
 
           example ["", "--json"]
 
-          # @param options [Hash]
+          # @param options [Hash] `:json`
+          # @return [void]
           def call(**options)
             identity = Identity.current
             warn_shared(identity) unless identity.source == :explicit
@@ -65,6 +66,7 @@ module Agent
           # them can ever block another.
           #
           # @param identity [Identity]
+          # @return [void]
           def warn_shared(identity)
             warn_("note: every sub-agent of this session answers to #{identity.id} too, so none can block another.")
             warn_("      Give each one its own: AGENT_ID=<name> #{program} acquire ...")

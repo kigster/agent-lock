@@ -23,6 +23,8 @@ module Agent
       # REDIS_URL, or failing that on the local default. See Store's moduledoc
       # for how that default is decided.
       class RedisStore
+        # The prefix of every key: `agent-lock:<repo digest>:<id>` for locks,
+        # `agent-lock-mutex:<repo digest>` for the mutex.
         NAMESPACE = "agent-lock"
 
         # Tried after REDIS_URL, or alone when it is unset.
@@ -37,9 +39,12 @@ module Agent
         # crashed holder is waited out rather than reported.
         MUTEX_TIMEOUT = 15
 
+        # The error raised when the mutex expired under a running claim.
         LEASE_LOST = "the lock store's mutex lease (#{MUTEX_LEASE_MS}ms) ran out before the claim finished, " \
                      "so another process may have claimed an overlapping scope: check the listing".freeze
 
+        # Compare-and-delete: release the mutex only while it still holds our
+        # token, so a process whose lease ran out cannot free somebody else's.
         RELEASE = <<~LUA
           if redis.call("GET", KEYS[1]) == ARGV[1] then
             return redis.call("DEL", KEYS[1])
@@ -49,6 +54,9 @@ module Agent
 
         attr_reader :tree, :client
 
+        # @param tree [Tree] the checkout whose repository names the namespace
+        # @param client [::Redis, nil] nil connects to the first URL that answers
+        # @raise [RuntimeError] when no client can be created
         def initialize(tree, client: nil)
           @tree = tree
 
@@ -150,11 +158,14 @@ module Agent
         # used to be the absolute path, which kept two machines apart even when
         # they were editing the same file. Which of those locks actually
         # collide is decided by Record#about?, not here.
+        #
+        # @return [String] the key prefix every lock in this repository shares
         def namespace = "#{NAMESPACE}:#{digest}"
 
         # @return [String]
         def url = self.class.url
 
+        # @return [String] the first 12 hex digits of the repository's SHA-256
         def digest = ::Digest::SHA256.hexdigest(tree.repo)[0, 12]
 
         # SET NX PX until it takes, backing off with jitter so that processes
@@ -203,8 +214,12 @@ module Agent
           timeout
         end
 
+        # @return [Integer] AGENT_LOCK_TTL_SECONDS; 0 means no expiry
         def ttl_seconds = Integer(ENV.fetch("AGENT_LOCK_TTL_SECONDS", 0))
 
+        # @param text [String, nil] the stored lock document
+        # @param key [String, nil] its Redis key, whose last segment is the id
+        # @return [Record, nil]
         def parse(text, key)
           return nil if text.nil?
 
@@ -233,8 +248,8 @@ module Agent
 
           # Tries each candidate URL in turn and keeps the first that answers.
           #
-          # @return Array[RedisClient,NilClass,Exception] the client if it could be created,
-          # or the error that prevented it (the last one tried)
+          # @return [Array(Redis, nil), Array(nil, Exception)] the client and nil,
+          #   or nil and the error from the last URL tried
           def create_client
             return [@client, nil] if @client
 
@@ -260,8 +275,8 @@ module Agent
 
           private
 
-          # @param candidate [String]
-          # @return Array[RedisClient,NilClass,Exception]
+          # @param candidate [String] a Redis URL
+          # @return [Array(Redis, nil), Array(nil, Exception)] the client, or the error
           def connect(candidate)
             client = ::Redis.new(url: candidate)
             client.info["redis_version"]

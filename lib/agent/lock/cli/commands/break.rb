@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "base"
+require_relative "tree_command"
 
 module Agent
   module Lock
@@ -11,11 +11,16 @@ module Agent
         # Deliberately blunt and deliberately loud: an expired lock is reaped
         # on its own, so reaching for this means overruling a holder that still
         # looks alive. Whoever runs it owns the consequence.
-        class Break < Base
-          desc "Steal a lock; announce it first"
+        class Break < TreeCommand
+          desc "Take a lock from its holder, even a live one; announce it first"
 
-          argument :scope, required: true, desc: "The path or glob to take"
+          argument :scope, required: true, desc: "The scope exactly as it was claimed"
 
+          example ["'docs/**'"]
+
+          # @param scope [String]
+          # @param options [Hash] `:dir`
+          # @return [Manager::Result] :broken or :not_found
           def call(scope:, **options)
             result = manager(options[:dir]).break_lock(scope)
 

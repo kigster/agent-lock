@@ -25,7 +25,7 @@ bundle exec rubocop
 
 Both spec runs and rubocop must be clean. CI (`.github/workflows/main.yml`) runs the suite once per backend plus rubocop as a third, independent job — a change that only passes one backend, or that is only checked against one, is not verified.
 
-A `justfile` exists for the rest (`just test`, `just ci`, `just format`, `just publish`, `just release`). **`just lint` currently names `standardrb`, which is not a dependency of this gem** — that recipe does not work; use `bundle exec rubocop` instead until it's reconciled.
+A `justfile` exists for the rest (`just lint`, `just test`, `just ci`, `just format`, `just doc`, `just publish`, `just release`). `rake doc` builds the YARD site into the git-ignored `doc/` from `.yardopts` and opens `doc/index.html`; keep `yard stats --list-undoc` at 100% with no warnings.
 
 ## The dual-backend test suite
 
@@ -42,10 +42,6 @@ The two backend classes are named with a `Store` suffix (`Agent::Lock::Store::Fi
 ## Backend selection is a security-relevant path
 
 `Store.for` decides a virgin tree's backend once and records it in a marker file; every later process in that tree is bound to it regardless of what Redis is doing. That marker is claimed atomically (`O_CREAT|O_EXCL`) so two processes racing to open the same virgin tree can't end up on different backends and silently stop seeing each other's locks — worse than no lock at all. See `lib/agent/lock/store.rb`'s moduledoc before changing anything in `.for`, `.claim`, or `.default_backend`.
-
-## Branch stacking
-
-`kig/add-autocomplete` (PR #4) is currently rebased on top of `kig/fix-concurrent-agent-locking` (PR #3), not on `main`, to keep them from diverging into a large manual conflict resolution later. Its diff against `main` will look large — it includes PR #3's commits — until PR #3 merges. If you rebase either branch again, verify both spec backends and rubocop afterward per the checks above, and force-push with `--force-with-lease`.
 
 ## Known gaps 
 

@@ -23,7 +23,7 @@ Metrics/BlockLength:
 
 # The library's documented objects are long because the comments are long.
 Metrics/ClassLength:
-  Max: 150
+  Max: 155
 
 Metrics/MethodLength:
   Max: 20

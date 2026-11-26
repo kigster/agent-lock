@@ -1,5 +1,22 @@
 # Changelog
 
+## [4.0.0] - 2026-11-24
+
+### Changed
+
+- **Breaking:** `alock acquire --force` is now `--allow-wide`, named for what it permits: `--enforce` freezing more than 500 files. The refusal says so.
+- **Breaking:** `alock skills install --force` (`-f`) is now `--overwrite`, and `--into` loses its `-o` short flag, which every CLI here reserves for `--output`.
+- `--dir` is offered only by commands that read a checkout's locks. `version`, `whoami` and `skills` no longer list a flag that did nothing.
+- Every command's help is rewritten: one-line descriptions that fit the command list, examples for `break`, `resume` and `mine`, and a top-level help that covers identity, backends and exit codes.
+- `alock completion --help` shows each install example once; the zsh one no longer names `_alo`.
+- `rake doc` builds the YARD site from `.yardopts` into the git-ignored `doc/` and opens `doc/index.html`. Every class, method, constant and attribute is documented.
+- The gemspec and README no longer describe the gem as part of agentilda.
+
+### Removed
+
+- `sig/agent/lock.rbs`, an empty RBS stub. Types are declared in YARD.
+- The `just update-workflow` recipe, which ran `tilda`. `just lint` now runs rubocop instead of the absent standardrb.
+
 ## [3.1.0] - 2026-11-23
 
 This release makes `agent-lock` a distributed lock. Until 3.0.0 a lock was named after the checkout's absolute path, so even with every machine pointed at one Redis, `/Users/a/repo` and `/home/b/repo` were two unrelated namespaces: each machine saw only its own locks, and two agents on two hosts could both claim `lib/billing/**` on `main` and both be told they won. A lock now names the repository and branch, which every clone of a repository agrees on wherever it sits. Pointed at one `REDIS_URL`, every machine reads and writes the same locks under the same store-wide mutex, so a claim on one host is refused on another. See `README.md#one-repository-many-machines`.

@@ -5,10 +5,7 @@
 A CLI utility `alock` that supports advisory locks on files and folders with pluggable backends (redis and file system provided out of the box, with redis being the default if it's available locally). This locking tool is meant for coding agents that share a project, whether they run on one machine or on several: with every machine pointed at one Redis, it is a distributed lock.
 
 > [!NOTE]
->
-> Please note that `agent-lock` is part of a three-part system: [`OpenLanes`](https://github.com/kigster/openlanes) is an AI harness workflow that works by creating specs, plans, and executing the plan until one or more PRs passing CI are created, and [`agentilda-ai-setup`](https://github.com/kigster/agentilda-ai-setup) — the GitHub repo that's a mixture of BASH and Ruby installers. It comes with the [`configuration.yml`](https://github.com/kigster/agentilda-ai-setup/blob/main/configuration.example.yml) file, which determines what skills, commands, plugins, and AI coding agents are locally installed.
->
-> That said, you can absolutely use the `agent-lock` gem in your own environment.
+> [OpenLanes](https://github.com/kigster/openlanes) uses `agent-lock` to keep the agents it runs from overwriting each other, but the gem has no dependency on it. Any harness, or a person with three terminals open, can use `alock` on its own.
 
 ## What it is
 
@@ -107,15 +104,15 @@ Three things matter, and each one fails silently if skipped:
 The gem ships a skill that teaches an agent all of the above, so the rules reach the agents rather than living only in this README. Install it into the skills directory your agent reads:
 
 ```bash
-alock skills install                   # default: into ~/.agents/skills, for most agents
-alock skills install --for claude      # into ~/.claude/skills instead
-alock skills install --into some/path  # anywhere else, --for is ignored if both are given
+alock skills install                   # into ~/.agents/skills, read by most agents
+alock skills install --for claude      # into ~/.claude/skills
+alock skills install --into some/path  # anywhere else; wins over --for
 alock skills path                      # where the bundled copy is
 ```
 
-`install` refuses to overwrite a copy that differs (`--force` replaces it) and never touches a symlink, since a symlink is some other installer's.
+`install` refuses to replace a copy that differs (`--overwrite` replaces it) and never touches a symlink, since a symlink belongs to some other installer.
 
-If you installed skills on your machine from repositories via a manifest, name this one as a source instead so the skill is recorded along with where it came from. For example:
+If a manifest-driven installer manages your skills, point it at this repository instead, so the skill is recorded with where it came from:
 
 ```yaml
 - name: agent-lock
@@ -278,32 +275,38 @@ Only live claims are counted as held. `--json` gives every record its `status` a
 
 ## Commands
 
-| Command                    | Does                                                   | Exit code                                              |
-| :------------------------- | :----------------------------------------------------- | :----------------------------------------------------- |
-| `acquire <scope> [intent]` | Claim a scope                                          | 1 if held, interrupted, or exactly your parent's scope |
-| `release <scope>`          | Give it back                                           | 1 if it belongs to somebody else                       |
-| `check <scope>`            | Report who holds it                                    | 1 if held by another session                           |
-| `note <scope> <text>`      | Record progress inside a lock you hold                 | 1 if you do not hold it                                |
-| `resume <scope>`           | Take back work a crash interrupted                     | 1 if there is nothing to resume                        |
-| `list`                     | Every lock in the store                                | 0                                                      |
-| `mine`                     | What this session and its sub-agents hold              | 0                                                      |
-| `release-all`              | Everything this session and its sub-agents hold        | 0                                                      |
-| `break <scope>`            | Take a live lock away from its holder                  | 0                                                      |
-| `whoami`                   | The name this session signs locks with, and its parent | 0                                                      |
-| `skills install`           | Copy the bundled skill into a skills directory         | 1 if a different copy or a symlink is there            |
-| `skills path`              | Where the bundled skill is                             | 0                                                      |
-| `completion bash\|zsh`     | Print a shell completion script                        | 1 for any other shell                                  |
+`alock --help` lists them; `alock <command> --help` shows each one's arguments, flags and examples.
+
+| Command                    | Does                                                    | Exits 1 when                                      |
+| :------------------------- | :------------------------------------------------------ | :------------------------------------------------ |
+| `acquire <scope> [intent]` | Claim a path, directory or glob before writing there    | held, interrupted, or exactly your parent's scope |
+| `release <scope>`          | Give a lock back, thawing any files it froze            | somebody else holds it                            |
+| `check <scope>`            | Say who holds a path                                    | another agent holds it                            |
+| `note <scope> <text>`      | Append a timestamped progress note to your lock         | you do not hold it                                |
+| `resume <scope>`           | Take back work a crash or reboot interrupted            | there is nothing to resume, or it was re-claimed  |
+| `break <scope>`            | Take a lock from its holder, even a live one            | nothing is locked there                           |
+| `list` (`ls`)              | Every lock in this repository, live and interrupted     | never                                             |
+| `mine`                     | Locks held by this session and its sub-agents           | never                                             |
+| `release-all`              | Release all of those                                    | never                                             |
+| `whoami`                   | The id your locks would carry, its parent, their source | never                                             |
+| `skills install`           | Copy the bundled skill into a skills directory          | a different copy, or a symlink, is there          |
+| `skills path`              | Print where the bundled skill lives                     | never                                             |
+| `completion bash\|zsh`     | Print a shell completion script                         | any other shell                                   |
+| `version`                  | Print the installed version                             | never                                             |
 
 Flags:
 
-| Flag         | Where                             | Does                                    |
-| :----------- | :-------------------------------- | :-------------------------------------- |
-| `--json`     | `check`, `list`, `mine`, `whoami` | Machine-readable output                 |
-| `--dir PATH` | Everywhere                        | Work as if run from `PATH`              |
-| `--enforce`  | `acquire`                         | Also make the matched files unwritable  |
-| `--force`    | `acquire`                         | Permit `--enforce` on a very wide scope |
+| Flag           | Where                                                              | Does                                                       |
+| :------------- | :----------------------------------------------------------------- | :--------------------------------------------------------- |
+| `--dir PATH`   | every command that reads locks (not `whoami`, `skills`, `version`) | Act on the checkout that contains `PATH`                   |
+| `--json`       | `check`, `list`, `mine`, `whoami`                                  | Machine-readable output                                    |
+| `--enforce`    | `acquire`                                                          | Also freeze the matched files (macOS)                      |
+| `--allow-wide` | `acquire`                                                          | Let `--enforce` freeze more than 500 files                 |
+| `--into DIR`   | `skills install`                                                   | Install into `DIR`                                         |
+| `--for AGENT`  | `skills install`                                                   | `claude` means `~/.claude/skills`, else `~/.agents/skills` |
+| `--overwrite`  | `skills install`                                                   | Replace an installed copy that differs                     |
 
-Any command exits 2 when it cannot run at all: an empty or out-of-tree scope, a backend mismatch, or a store it cannot reach.
+Any command exits 2 when it cannot run at all: an empty or out-of-tree scope, a backend mismatch, a freeze that is refused, or a store it cannot reach.
 
 ## Shell completion
 
@@ -342,12 +345,12 @@ AGENT_LOCK_BACKEND=file  alock acquire workflow/**   # or force the file store i
 
 A lock is about a repository and the files in it, not about where a checkout sits on disk. Point every machine at one Redis with `REDIS_URL`, and each checkout of the repository reads the same locks, wherever it is cloned:
 
-| Two checkouts of one repository                   | Do their locks collide?                                    |
-| ------------------------------------------------- | ---------------------------------------------------------- |
-| Same branch, any machine, any path                | Yes, on overlapping scopes; different files are fine       |
-| Different branches, such as two worktrees         | No: separate branches are what a worktree is for           |
-| One checkout that switched branch after claiming  | Yes: the files on disk did not change hands                |
-| A detached HEAD                                   | Only within that checkout, since it has no branch to share |
+| Two checkouts of one repository                  | Do their locks collide?                                    |
+| ------------------------------------------------ | ---------------------------------------------------------- |
+| Same branch, any machine, any path               | Yes, on overlapping scopes; different files are fine       |
+| Different branches, such as two worktrees        | No: separate branches are what a worktree is for           |
+| One checkout that switched branch after claiming | Yes: the files on disk did not change hands                |
+| A detached HEAD                                  | Only within that checkout, since it has no branch to share |
 
 The repository is named by its `origin` URL, normalized so that `git@github.com:a/b.git` and `https://github.com/a/b` agree. A repository with no `origin` is named by its root commit, and a directory outside git by its path.
 
@@ -355,13 +358,13 @@ The repository is named by its `origin` URL, normalized so that `git@github.com:
 
 Before 3.1.0 a lock was named after the checkout's absolute path. A shared Redis did not help: `/Users/a/repo` on one laptop and `/home/b/repo` on a build box hashed to two unrelated namespaces, so each machine saw only its own locks, and two agents on two hosts could both claim `lib/billing/**` on `main` and both be told they won. Since 3.1.0, with every machine on one `REDIS_URL`, the gem has everything a distributed lock needs:
 
-| A distributed lock needs                  | How `agent-lock` provides it                                                                                                                                                                                                                                                   |
-| :---------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| One name for the resource on every host   | A lock's id comes from the repository, branch and scope, which every clone computes the same way. Nothing local, such as a path or a username, goes into it                                                                                                                    |
-| One store that every host reads           | Every checkout of a repository reads and writes `agent-lock:<repository digest>` in the shared Redis                                                                                                                                                                           |
-| Mutual exclusion across hosts             | The conflict check and the write run under `agent-lock-mutex:<repository digest>`, taken with `SET NX PX` and a random token and released by compare-and-delete. The lock itself is written with `SET NX`, so two hosts after the same id cannot both create it              |
-| Recovery from a holder that disappears    | A crashed holder's mutex lease runs out within 10 seconds. A pid on another host cannot be checked, so that host's lock expires once nobody has touched it for `AGENT_LOCK_STALE_MINUTES`, and every `note` counts as a touch. `AGENT_LOCK_TTL_SECONDS` adds a hard Redis TTL |
-| A boundary on what counts as a collision  | Locks collide only on the same branch. Worktrees on their own branches stay independent, which is what a worktree is for                                                                                                                                                       |
+| A distributed lock needs                 | How `agent-lock` provides it                                                                                                                                                                                                                                                  |
+| :--------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One name for the resource on every host  | A lock's id comes from the repository, branch and scope, which every clone computes the same way. Nothing local, such as a path or a username, goes into it                                                                                                                   |
+| One store that every host reads          | Every checkout of a repository reads and writes `agent-lock:<repository digest>` in the shared Redis                                                                                                                                                                          |
+| Mutual exclusion across hosts            | The conflict check and the write run under `agent-lock-mutex:<repository digest>`, taken with `SET NX PX` and a random token and released by compare-and-delete. The lock itself is written with `SET NX`, so two hosts after the same id cannot both create it               |
+| Recovery from a holder that disappears   | A crashed holder's mutex lease runs out within 10 seconds. A pid on another host cannot be checked, so that host's lock expires once nobody has touched it for `AGENT_LOCK_STALE_MINUTES`, and every `note` counts as a touch. `AGENT_LOCK_TTL_SECONDS` adds a hard Redis TTL |
+| A boundary on what counts as a collision | Locks collide only on the same branch. Worktrees on their own branches stay independent, which is what a worktree is for                                                                                                                                                      |
 
 Where the guarantees stop:
 
@@ -399,16 +402,17 @@ alock acquire "config/credentials/**" "keys must not move during the migration" 
 
 ```bash
 bin/setup
-bundle exec rspec                              # 268 examples, against the file backend
-AGENT_LOCK_TEST_BACKEND=redis bundle exec rspec # the same suite, against Redis instead
-bundle exec rubocop
+bundle exec rspec                               # against the file backend
+AGENT_LOCK_TEST_BACKEND=redis bundle exec rspec # the same suite, against Redis
+bundle exec rubocop                             # or: just lint
+bundle exec rake doc                            # YARD site in doc/ (git-ignored), opened in a browser
 ```
 
-The suite runs against one backend at a time, picked by `AGENT_LOCK_TEST_BACKEND` rather than the machine's own default, so it stays deterministic whether or not Redis happens to be running: only the examples that test one backend's own on-disk or on-Redis shape care which one that is, and a Redis run defaults to database 15 so it never touches whatever database a developer's own Redis work lives in. CI runs both, plus rubocop as a third, independent job.
+The suite runs against one backend at a time, picked by `AGENT_LOCK_TEST_BACKEND` rather than the machine's own default, so it is deterministic whether or not Redis is running. A Redis run uses database 15, so it never touches a developer's own data. CI runs both backends, plus rubocop as a third job.
 
-A `justfile` covers the rest: `just test`, `just test-coverage`, `just ci` (rubocop then coverage), `just format` (autocorrect, then regenerate `.rubocop_todo.yml`), and `just publish`/`just release` for cutting a version. `just lint` currently names `standardrb`, which is not one of this gem's dependencies; use `bundle exec rubocop` until that recipe is reconciled with the rest of the project's tooling.
+The `justfile` covers the rest: `just lint`, `just test`, `just test-coverage`, `just ci` (lint, then coverage), `just format` (autocorrect, then regenerate `.rubocop_todo.yml`), `just doc`, and `just publish` / `just release` for cutting a version.
 
-The library decides and the CLI prints. Every verb is a method on `Manager` that returns a result and prints nothing, so the whole lifecycle can be tested without capturing output. `Launcher` takes `argv`, `stdin`, `stdout`, `stderr` and `kernel` as arguments, and nothing below it calls `puts` or a receiverless `exit`, which is what lets Aruba run the CLI end to end inside the test process instead of forking a Ruby per example.
+The library decides and the CLI prints. Every verb is a method on `Agent::Lock::Manager` that returns a `Result` and prints nothing, so the lifecycle is tested without capturing output. `Launcher` takes `argv`, `stdin`, `stdout`, `stderr` and `kernel` as arguments, and nothing below it calls `puts` or a bare `exit`, which lets Aruba run the CLI end to end inside the test process. Every public class, method and constant carries YARD documentation; `yard stats --list-undoc` stays at 100%.
 
 ## License
 

@@ -29,6 +29,7 @@ module Agent
       #   cannot become two names for one tree
       attr_reader :root
 
+      # @param dir [String] anywhere inside the tree
       def initialize(dir = Dir.pwd)
         @dir = File.realpath(dir)
         @root = git("rev-parse", "--show-toplevel") || @dir
@@ -105,10 +106,9 @@ module Agent
         end
       end
 
-      # @description Resolves the directory where locks are stored by either
-      # $AGENT_LOCK_DIR environment variable if defined, or 'agent-locks'
-      # inside .git if available, or the ~/.agent-locks/<tree-digest> in user's
-      # home folder.
+      # Where the file store keeps this tree's locks: `$AGENT_LOCK_DIR` when
+      # set, else `agent-locks` inside the git common dir (shared by every
+      # worktree), else `~/.agent-locks/<digest of the root>` outside git.
       # @return [String] where locks for this tree are written
       def store_dir
         return File.expand_path(ENV["AGENT_LOCK_DIR"]) if ENV["AGENT_LOCK_DIR"]
@@ -178,10 +178,14 @@ module Agent
       # @return [String, nil]
       def root_commit = git("rev-list", "--max-parents=0", "HEAD")&.split("\n")&.min
 
+      # @return [String, nil] this checkout's own git dir, absolute; nil outside git
       def git_dir = @git_dir ||= absolute(git("rev-parse", "--git-dir"))
 
+      # @return [String, nil] the git dir every worktree shares, absolute; nil outside git
       def common_dir = @common_dir ||= absolute(git("rev-parse", "--git-common-dir"))
 
+      # @param dir [String, nil] as git printed it, possibly relative to @dir
+      # @return [String, nil] absolute with symlinks resolved, or nil when it does not exist
       def absolute(dir)
         return nil if dir.nil?
 
@@ -190,6 +194,8 @@ module Agent
         nil
       end
 
+      # @param args [Array<String>] arguments to `git -C <dir>`
+      # @return [String, nil] stripped output, or nil when empty or git failed to run
       def git(*args)
         out = IO.popen(["git", "-C", @dir, *args], err: File::NULL, &:read).to_s.strip
         out.empty? ? nil : out

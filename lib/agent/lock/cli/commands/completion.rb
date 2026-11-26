@@ -6,43 +6,26 @@ module Agent
   module Lock
     module CLI
       module Commands
-        # `alock completion bash|zsh`, from dry-cli-autocomplete, with the two
-        # things that gem's command cannot do for us restated here.
+        # `alock completion bash|zsh`, from dry-cli-autocomplete.
         #
-        # It writes to `$stdout` directly, which the in-process launcher can
-        # neither capture nor redirect, and it binds a registry by way of
-        # `Class.new`, which is exactly where dry-cli clears an inherited
-        # `desc` and `example`. Both belong upstream; until then, here.
+        # Upstream binds a registry by subclassing this command, restores
+        # the description and examples dry-cli's `inherited` hook clears, and
+        # writes to the stream dry-cli hands it. All that is left to say here
+        # is the wording, and where a Homebrew bash keeps its completions.
         class Completion < Dry::CLI::Autocomplete::Command
-          desc "Print a shell completion script for bash or zsh"
+          desc "Print a bash or zsh completion script"
 
-          # Spelled out rather than taken from $PROGRAM_NAME, which under a
-          # test runner names the runner, and which upstream reads at load
-          # time anyway.
-          example [
-            "bash > \"$(brew --prefix)/etc/bash_completion.d/alock\"",
-            "zsh  > \"${fpath[1]}/_alo\""
-          ]
-
-          # Binding a registry subclasses this command, and dry-cli's
-          # `inherited` hook starts every subclass with no description and no
-          # examples. Arguments and options survive it; those two do not, so
-          # they are copied across by hand.
+          # Upstream calls this from inside the subclass it builds, so
+          # overriding it here changes the examples `--help` prints.
           #
-          # @param registry [Dry::CLI::Registry]
-          # @return [Class]
-          def self.[](registry, program_name: nil)
-            super.tap do |bound|
-              bound.desc(description)
-              bound.example(*examples)
-            end
+          # @param name [String] the program the script completes
+          # @return [Array<String>]
+          def self.examples_for(name)
+            [
+              "bash > \"$(brew --prefix)/etc/bash_completion.d/#{name}\"",
+              "zsh  > \"${fpath[1]}/_#{name}\""
+            ]
           end
-
-          private
-
-          # dry-cli hands every command the stream it should be writing to.
-          # The command upstream ignores it; this one does not.
-          def out = @out || $stdout
         end
       end
     end

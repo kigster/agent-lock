@@ -8,6 +8,7 @@ require "json"
 module Agent
   module Lock
     module CLI
+      # One class per `alock` verb, all built on {Base}.
       module Commands
         # What every command shares: the launcher it prints through, the
         # manager it delegates to, and the wording of a held lock.
@@ -15,15 +16,15 @@ module Agent
         # Nothing here calls `puts` or `exit`. Output goes to the launcher's
         # streams and the exit code is handed back to it, which is what lets
         # the whole CLI run inside the test process.
+        #
+        # Commands that read or write a lock store subclass {TreeCommand}
+        # instead, which adds `--dir`. The rest (`version`, `whoami`,
+        # `skills`) never look at a tree, so offering them `--dir` would be
+        # a flag that silently does nothing.
+        #
+        # @abstract Subclass and implement `#call(**options)`.
         class Base < Dry::CLI::Command
-          # Inherited by every command, so `--dir` works everywhere without
-          # each one restating it.
-          def self.inherited(subclass)
-            super
-            subclass.option :dir, type: :string, default: ".",
-                                  desc: "Work as if run from this directory"
-          end
-
+          # @return [Launcher] the streams, program name and exit code holder
           attr_reader :launcher
 
           # @param launcher [Launcher]
@@ -34,8 +35,10 @@ module Agent
 
           private
 
+          # @return [IO] where the deliverable goes
           def stdout = launcher.stdout
 
+          # @return [IO] where refusals, hints and warnings go
           def stderr = launcher.stderr
 
           # What to call this CLI in a hint, so the command it suggests is
@@ -44,11 +47,12 @@ module Agent
           # @return [String]
           def program = launcher.program
 
-          # @param dir [String]
-          # @return [Manager]
+          # @param dir [String, nil] the `--dir` option; nil means the current directory
+          # @return [Manager] bound to the tree that contains `dir`
           def manager(dir) = Manager.new(tree: Tree.for(dir || "."))
 
-          # @param text [String]
+          # @param text [String] one line of the deliverable
+          # @return [void]
           def say(text) = stdout.puts(text)
 
           # STDOUT is flushed first. An agent harness reads both streams down
@@ -56,13 +60,17 @@ module Agent
           # without the flush every hint arrives ahead of the record it is
           # about.
           #
-          # @param text [String]
+          # @param text [String] one line of diagnostics
+          # @return [void]
           def warn_(text)
             stdout.flush
             stderr.puts(text)
           end
 
-          # @param result [Manager::Result]
+          # Hand the result's exit code to the launcher, which exits with it.
+          #
+          # @param result [Manager::Result, Skill::Result]
+          # @return [Manager::Result, Skill::Result] the same result
           def finish(result)
             launcher.exit_code = result.code
             result
@@ -76,6 +84,7 @@ module Agent
           #
           # @param records [Array<Record>]
           # @param stale_minutes [Integer] Manager#stale_minutes
+          # @return [void]
           def report_held(records, stale_minutes:)
             records.each do |record|
               warn_(["HELD  #{record.scope}  by #{record.agent_id}  since #{record.created_at}",
@@ -92,6 +101,7 @@ module Agent
           # @param records [Array<Record>]
           # @param json [Boolean]
           # @param stale_minutes [Integer] Manager#stale_minutes
+          # @return [void]
           def report_records(records, json:, stale_minutes:)
             return say(JSON.pretty_generate(records.map { |record| as_json(record, stale_minutes) })) if json
 
@@ -105,6 +115,7 @@ module Agent
           # left to be looked up, since each throws away something different.
           #
           # @param record [Record] an orphaned lock
+          # @return [void]
           def advise_interrupted(record)
             warn_("  #{program} resume #{record.scope}   # take it back, notes and all")
             warn_("  #{program} break #{record.scope}    # throw it away and start over")
@@ -126,6 +137,7 @@ module Agent
           #
           # @param record [Record]
           # @param stale_minutes [Integer]
+          # @return [void]
           def warn_stale(record, stale_minutes)
             warn_("      stale: untouched for over #{stale_minutes} minutes; ask its holder, " \
                   "or announce it before `#{program} break #{record.scope}`")

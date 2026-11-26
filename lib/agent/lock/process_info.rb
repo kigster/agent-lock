@@ -45,6 +45,8 @@ module Agent
         now == started
       end
 
+      # @param pid [Integer, nil]
+      # @param field [String] a `ps -o` keyword, e.g. "comm"
       # @return [String, nil] the field, or nil for a process that is gone
       def ps(pid, field)
         return nil if pid.nil?

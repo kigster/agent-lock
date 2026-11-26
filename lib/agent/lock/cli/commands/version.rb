@@ -8,8 +8,9 @@ module Agent
       module Commands
         # What is installed, for a bug report.
         class Version < Base
-          desc "Print the version"
+          desc "Print the installed version"
 
+          # @return [void]
           def call(**)
             say(Agent::Lock::VERSION)
           end

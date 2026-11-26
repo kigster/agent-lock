@@ -17,23 +17,27 @@ module Agent
       # line, so guessing it wrong is not a cosmetic mistake.
       PROGRAM_NAME = "alock"
 
-      # What `alock -h` says before it lists the commands. Wrapped by
-      # dry-cli-help at HELP_WIDTH rather than the terminal's width, so the
-      # screen reads the same in a wide terminal, a narrow one, and a log.
+      # The column dry-cli-help wraps at, rather than the terminal's width,
+      # so help reads the same in a wide terminal, a narrow one, and a log.
       HELP_WIDTH = 85
 
+      # What `alock -h` says before it lists the commands.
       DESCRIPTION = <<~TEXT
-        Advisory locks for AI coding agents working concurrently in one checkout.
-        An agent claims the file or directory it is about to write, and every other
-        agent that checks sees who holds it and why. Nothing is enforced: the locks
-        work because every agent checks before it writes.
+        Advisory locks for AI coding agents that share a checkout, or a branch
+        across machines. Claim the file, directory or glob you are about to write
+        with `acquire`; any other agent that claims or checks an overlapping scope
+        is refused and told who holds it, since when, and why. Locks are advisory:
+        they protect only from agents that check.
 
-        Locks live in one of two backends. Redis, when one answers on REDIS_URL or
-        on localhost:6379, holds across machines and can expire an abandoned lock.
-        The file store, used when no Redis answers, needs nothing installed. The
-        first process in a tree records which backend it chose, and every later
-        process in that tree stays on it. Set AGENT_LOCK_BACKEND to `redis` or
-        `file` to choose one yourself.
+        Sub-agents of one session share its process, so each must name itself on
+        every call: AGENT_ID=<name> alock acquire ... Run `alock whoami` to see the
+        name your locks would carry.
+
+        Backends: Redis when one answers on REDIS_URL or localhost:6379 (shared
+        across machines), otherwise a file store inside .git. The first process in
+        a checkout records the choice; AGENT_LOCK_BACKEND=redis|file overrides it.
+
+        Exit codes: 0 done, 1 refused or held by someone else, 2 could not run.
       TEXT
 
       Dry::CLI::Help.configure do
@@ -64,13 +68,14 @@ module Agent
         registry
       end
 
-      # The whole command line, in one place, so adding a verb is one line
-      # rather than three. Filled in below, once the commands are loaded.
+      # The whole command line is the COMMANDS table below, filled in once
+      # the command classes are loaded, so adding a verb is one line.
     end
   end
 end
 
 require_relative "cli/commands/base"
+require_relative "cli/commands/tree_command"
 require_relative "cli/commands/acquire"
 require_relative "cli/commands/release"
 require_relative "cli/commands/check"
@@ -88,6 +93,10 @@ require_relative "cli/commands/completion"
 module Agent
   module Lock
     module CLI
+      # Every command but `completion`, which needs the finished registry.
+      # Each entry maps the name typed to its class and its aliases.
+      #
+      # @return [Hash{String => Array(Class, Array<String>)}]
       COMMANDS = {
         "acquire" => [Commands::Acquire, []],
         "release" => [Commands::Release, []],
