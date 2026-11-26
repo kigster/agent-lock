@@ -21,8 +21,11 @@ module Agent
             "REFUSED: #{result.record.scope} is your parent's (#{result.record.agent_id}) whole claim; " \
               "claim a narrower scope inside it"
           },
-          interrupted: lambda { |result, _scope|
-            "INTERRUPTED WORK on #{result.record.scope}, left by #{result.record.agent_id}; resume it or break it"
+          # Manager#rebind can report :interrupted with no record left to name.
+          interrupted: lambda { |result, scope|
+            record = result.record
+            owner = record ? ", left by #{record.agent_id}" : ""
+            "INTERRUPTED WORK on #{record&.scope || scope}#{owner}; resume it or break it"
           },
           refused: lambda { |result, _scope|
             "REFUSED: #{result.record.scope} is held by #{result.record.agent_id}, not you"

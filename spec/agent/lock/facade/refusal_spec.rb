@@ -45,6 +45,12 @@ RSpec.describe Agent::Lock::Facade::Refusal do
     expect(refusal_of(lock_result(:held)).message).to end_with("since 2026-11-25T10:00:00Z")
   end
 
+  it "names the scope as typed when interrupted work left no record to name" do
+    error = refusal_of(lock_result(:interrupted, []), scope: "lib/**")
+
+    expect(error.message).to eq("INTERRUPTED WORK on lib/**; resume it or break it")
+  end
+
   it "carries the result it refused" do
     result = lock_result(:refused)
 
