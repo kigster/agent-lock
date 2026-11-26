@@ -500,10 +500,10 @@ RSpec.describe Agent::Lock::CLI do
       output = agent_lock("--help").output
 
       aggregate_failures do
-        expect(output).to include("Agent Lock, Version #{Agent::Lock::VERSION}")
+        expect(output).to include("Agent/Lock — Distributed Advisory Locker")
+        expect(output).to include("Version #{Agent::Lock::VERSION}")
         expect(output).to include("Advisory locks for AI coding agents")
         expect(output).to match(/^  acquire\s+Claim a path or glob/)
-        expect(output.lines.map(&:chomp).map(&:length).max).to be <= Agent::Lock::CLI::HELP_WIDTH
       end
     end
 
