@@ -33,7 +33,7 @@ A `justfile` exists for the rest (`just lint`, `just test`, `just ci`, `just for
 
 If you add a spec that is inherently about one backend's own on-disk or on-Redis shape (not just the `Store` contract both satisfy), pin it to that backend explicitly regardless of `AGENT_LOCK_TEST_BACKEND` — see `manager_spec.rb`'s "the store the locks live in" block for the pattern.
 
-Redis-backed tests use a fixed test database (`RedisHelpers::TEST_REDIS_URL`, `spec/support/redis.rb`), never whatever `REDIS_URL` happens to be set to in the shell — a `flush_test_redis!` runs after every example. Do not make that depend on an ambient env var again; an unrelated project's `.envrc` exporting `REDIS_URL` is exactly the failure mode that guards against, and it has bitten this exact repo's own tooling (see the git log for "Never let ambient REDIS_URL decide what the suite flushes").
+Redis-backed tests use a fixed test database (`RedisHelpers::TEST_REDIS_URL`, `spec/support/redis.rb`), never whatever `REDIS_URL` happens to be set to in the shell — a `flush_test_redis!` runs after every example. `facade_redis_spec.rb` needs two separate lockers, so it also owns `RedisHelpers::SECOND_TEST_REDIS_URL` (database 14) and flushes that itself. Do not make that depend on an ambient env var again; an unrelated project's `.envrc` exporting `REDIS_URL` is exactly the failure mode that guards against, and it has bitten this exact repo's own tooling (see the git log for "Never let ambient REDIS_URL decide what the suite flushes").
 
 ## Naming: `FileSystemStore` / `RedisStore`, not `FileSystem` / `Redis`
 
