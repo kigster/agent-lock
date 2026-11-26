@@ -12,6 +12,14 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
   end
 
   describe ".new" do
+    it { is_expected.to be_frozen }
+
+    it "reads REDIS_URL when no redis_url is given" do
+      with_env("REDIS_URL" => "redis://127.0.0.1:1") do
+        expect(described_class.new(strategies: %w[file]).redis_url).to eq("redis://127.0.0.1:1")
+      end
+    end
+
     it "accepts filesystem as a name for the file store" do
       built = described_class.new(strategies: %w[filesystem])
 
@@ -87,6 +95,10 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
       child = described_class.new(strategies: %w[file], agent_id: "child", parent_id: "luke-backend")
 
       expect(child.acquire("workflow/lib/cli.rb", dir: checkout).status).to eq(:acquired)
+    end
+
+    it "rejects a keyword no command takes, instead of ignoring it" do
+      expect { facade.acquire("workflow/**", dir: checkout, force: true) }.to raise_error(ArgumentError, /force/)
     end
 
     it "accepts a stale window for this call" do
@@ -229,6 +241,14 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
 
         expect(result.status).to eq(:installed)
         expect(result.path).to start_with(dir)
+      end
+    end
+
+    it "installs into the agent's own skills directory when only agent is given" do
+      Dir.mktmpdir("agent-lock-home") do |home|
+        with_env("HOME" => home) do
+          expect(facade.skills_install(agent: "claude").path).to eq(File.join(home, ".claude", "skills", "agent-lock"))
+        end
       end
     end
 

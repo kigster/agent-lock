@@ -1,33 +1,45 @@
 # frozen_string_literal: true
 
 require_relative "facade/backend"
-require_relative "facade/runner"
+require_relative "facade/session"
+require_relative "facade/refusal"
+require_relative "facade/memo"
 
 module Agent
-  # In-process access to the lock commands. {Facade} runs each one.
+  # {Facade} and the process-wide facades {.local} and {.distributed}.
   module Lock
-    # The lock commands, called in this process instead of through `alock`.
+    # Every `alock` command as a method, run in this process: no fork, no exec.
     #
-    # One facade is one locker. It picks a backend when it is built and
-    # stays on it, so every thread that calls it takes locks in the same
-    # store. A second facade with another `redis_url` is a different locker.
-    # Building one does not change {Agent::Lock.local} or
-    # {Agent::Lock.distributed}.
+    # One facade is one locker. It picks its backend when it is built and
+    # keeps it, so every thread calling it takes locks in the same store. A
+    # second facade with another `redis_url` is a separate locker. Building
+    # one never touches {Agent::Lock.local} or {Agent::Lock.distributed}.
     #
-    # Each method runs the command of the same name. A refusal that command
-    # would print on stderr is raised as {Refused}, and the message is that
-    # text. A result the command prints on stdout comes back as a
-    # {Manager::Result}, a {Skill::Result}, or a string.
+    # Thread-safe: a facade is frozen, and each call builds its own
+    # {Manager}, so threads share nothing but the store, whose mutex
+    # serializes the writes.
     #
-    # The facade does not read or write the tree's backend marker. Pass the
-    # same strategies and Redis URL from every process that must see the
-    # same locks.
+    # A lock method returns the {Manager::Result} on success. Where the CLI
+    # would print a refusal on stderr and exit 1, it raises {Refused}, whose
+    # `result` is the same {Manager::Result}.
     #
-    # @example File store, named like a sub-agent
+    # Every lock method also takes these keywords, which override the
+    # facade's defaults for that one call:
+    #
+    # - `dir:` [String] a directory inside the checkout (default: the current one)
+    # - `agent_id:` [String] who holds the lock
+    # - `parent_id:` [String] that holder's parent session
+    # - `stale_minutes:` [Integer] when an unverifiable lock counts as stale
+    #
+    # The facade does not read or write the checkout's backend marker, so
+    # give every process that must see the same locks the same strategies
+    # and Redis URL.
+    #
+    # @example File store, signed by a sub-agent
     #   locks = Agent::Lock.local
-    #   locks.acquire("lib/**", "rewriting billing", agent_id: "luke")
+    #   locks.acquire("lib/**", "rewriting billing", agent_id: "luke-backend")
     #
-    # @example Redis, then the file store if that URL does not answer
+    # @example Redis, falling back to the file store when it does not answer
     #   locks = Agent::Lock::Facade.new(
     #     strategies: %w[redis file],
     #     redis_url: ENV.fetch("REDIS_URL", "redis://localhost:6379")
@@ -39,235 +51,175 @@ module Agent
       # Used when `redis_url` is omitted and `REDIS_URL` is unset.
       DEFAULT_REDIS_URL = "redis://localhost:6379"
 
-      # @return [String] "redis" or "file", chosen once at construction
-      attr_reader :backend_name
-
-      # @return [String] the Redis URL this facade was given
-      attr_reader :redis_url
-
-      # @param strategies [Array<String, Symbol>] tried in order. `file` and
-      #   `filesystem` are the file store. `redis` is used when `redis_url` answers.
+      # @param strategies [Array<String, Symbol>] backends to try, in order:
+      #   `redis`, and `file` (or `filesystem`)
       # @param redis_url [String, nil] defaults to `REDIS_URL`, then {DEFAULT_REDIS_URL}
-      # @param agent_id [String, nil] signs locks when a call does not pass its own
-      # @param parent_id [String, nil]
+      # @param agent_id [String, nil] signs locks when a call does not name its own
+      # @param parent_id [String, nil] that holder's parent, likewise
       # @param stale_minutes [Integer, nil] nil reads `AGENT_LOCK_STALE_MINUTES`
-      # @raise [RedisUnavailableError] when Redis is required and does not answer
+      # @raise [RedisUnavailableError] when no strategy but `redis` is left and it does not answer
       # @raise [ArgumentError] when `strategies` is empty or names an unknown backend
       def initialize(strategies: DEFAULT_STRATEGIES, redis_url: nil, agent_id: nil, parent_id: nil,
                      stale_minutes: nil)
-        @redis_url = redis_url || ENV.fetch("REDIS_URL", DEFAULT_REDIS_URL)
-        @backend = Backend.new(strategies: strategies, redis_url: @redis_url)
-        @runner = Runner.new(@backend, agent_id:, parent_id:, stale_minutes:)
-        @backend_name = @backend.name
+        @backend = Backend.new(strategies:, redis_url: redis_url || ENV.fetch("REDIS_URL", DEFAULT_REDIS_URL))
+        @session = Session.new(@backend, agent_id:, parent_id:, stale_minutes:)
+        freeze
       end
 
-      # Claim a scope. `ALREADY YOURS` returns the result. A refusal raises.
+      # @return [String] "redis" or "file", chosen once at construction
+      def backend_name = @backend.name
+
+      # @return [String] the Redis URL this facade was given, used or not
+      def redis_url = @backend.redis_url
+
+      # `alock acquire`: claim a scope before writing in it.
       #
-      # @param scope [String]
-      # @param intent [String, nil]
-      # @param enforce [Boolean] also freeze the matched files on macOS
+      # @param scope [String] a path, a directory, or a glob such as `lib/**`
+      # @param intent [String, nil] what the holder is about to do
+      # @param enforce [Boolean] also freeze the matched files (macOS only)
       # @param allow_wide [Boolean] let `enforce` freeze more than {Freeze::LIMIT} files
-      # @param dir [String, nil] act on the checkout that contains this directory
-      # @param agent_id [String, nil]
-      # @param parent_id [String, nil]
-      # @param stale_minutes [Integer, nil]
-      # @return [Manager::Result] :acquired or :already_mine
-      # @raise [Refused] held, interrupted, or exactly the parent's scope
-      # @raise [Scope::Invalid] when the scope is empty or outside the tree
-      # @raise [Freeze::TooBroad] when `enforce` is wider than the limit and `allow_wide` is false
-      def acquire(scope, intent = nil, enforce: false, allow_wide: false, **)
-        runner.call(CLI::Commands::Acquire, scope:, intent:, enforce:, allow_wide:, **)
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @return [Manager::Result] `:acquired`, or `:already_mine` when a lock of yours covers it
+      # @raise [Refused] held by another agent, interrupted work, or exactly your parent's scope
+      # @raise [Scope::Invalid] when the scope is empty or outside the checkout
+      # @raise [Freeze::TooBroad] when `enforce` exceeds the limit without `allow_wide`
+      def acquire(scope, intent = nil, enforce: false, allow_wide: false, **session)
+        manager = @session.manager(**session)
+        Refusal.check!(manager.acquire(scope, intent: intent || "unspecified", enforce:, wide: allow_wide))
       end
 
-      # @param scope [String]
-      # @param dir [String, nil]
-      # @param agent_id [String, nil]
-      # @param parent_id [String, nil]
-      # @param stale_minutes [Integer, nil]
-      # @return [Manager::Result] :released, or :not_found when nothing is locked
-      # @raise [Refused] when another agent holds it
-      def release(scope, **)
-        runner.call(CLI::Commands::Release, scope:, **)
-      end
-
-      # @param scope [String]
-      # @param dir [String, nil]
-      # @param agent_id [String, nil]
-      # @param parent_id [String, nil]
-      # @param stale_minutes [Integer, nil]
-      # @return [Manager::Result] :free or :mine
-      # @raise [Refused] when another agent holds an overlapping scope
-      def check(scope, **)
-        runner.call(CLI::Commands::Check, scope:, **)
-      end
-
-      # @param dir [String, nil]
-      # @param agent_id [String, nil]
-      # @param parent_id [String, nil]
-      # @param stale_minutes [Integer, nil]
-      # @return [Manager::Result] every lock in this facade's store
-      def list(**)
-        runner.call(CLI::Commands::List, **)
-      end
-
-      # @param dir [String, nil]
-      # @param agent_id [String, nil]
-      # @param parent_id [String, nil]
-      # @param stale_minutes [Integer, nil]
-      # @return [Manager::Result] locks held by this identity and its sub-agents
-      def mine(**)
-        runner.call(CLI::Commands::Mine, **)
-      end
-
-      # @param dir [String, nil]
-      # @param agent_id [String, nil]
-      # @param parent_id [String, nil]
-      # @param stale_minutes [Integer, nil]
-      # @return [Manager::Result] what was released
-      def release_all(**)
-        runner.call(CLI::Commands::ReleaseAll, **)
-      end
-
-      # `alock break`. The CLI's BREAKING lines are a warning on a command
-      # that succeeded, so this returns the result instead of raising.
+      # `alock release`.
       #
       # @param scope [String]
-      # @param dir [String, nil]
-      # @param agent_id [String, nil]
-      # @param parent_id [String, nil]
-      # @param stale_minutes [Integer, nil]
-      # @return [Manager::Result] :broken, or :not_found
-      def break_lock(scope, **)
-        runner.call(CLI::Commands::Break, scope:, **)
-      end
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @return [Manager::Result] `:released`, or `:not_found` when nothing is locked there
+      # @raise [Refused] when another agent holds it
+      def release(scope, **session) = Refusal.check!(@session.manager(**session).release(scope))
 
+      # `alock check`: may I write here?
+      #
+      # @param scope [String]
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @return [Manager::Result] `:free`, or `:mine`
+      # @raise [Refused] when another agent holds an overlapping scope
+      def check(scope, **session) = Refusal.check!(@session.manager(**session).check(scope))
+
+      # `alock list`.
+      #
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @return [Manager::Result] every lock in this facade's store
+      def list(**session) = @session.manager(**session).list
+
+      # `alock mine`.
+      #
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @return [Manager::Result] locks held by this identity and its sub-agents
+      def mine(**session) = @session.manager(**session).mine
+
+      # `alock release-all`.
+      #
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @return [Manager::Result] what was released
+      def release_all(**session) = @session.manager(**session).release_all
+
+      # `alock break`: drop somebody else's lock. Announce it first. Never
+      # raises a refusal: breaking a free scope returns `:not_found`.
+      #
+      # @param scope [String]
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @return [Manager::Result] `:broken`, or `:not_found`
+      def break_lock(scope, **session) = @session.manager(**session).break_lock(scope)
+
+      # `alock note`: leave a note on a lock you hold.
+      #
       # @param scope [String]
       # @param text [String]
-      # @param dir [String, nil]
-      # @param agent_id [String, nil]
-      # @param parent_id [String, nil]
-      # @param stale_minutes [Integer, nil]
-      # @return [Manager::Result] :noted
-      # @raise [Refused] when this identity does not hold the lock
-      def note(scope, text, **)
-        runner.call(CLI::Commands::Note, scope:, text:, **)
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @return [Manager::Result] `:noted`
+      # @raise [Refused] when nothing is locked there, or another agent holds it
+      def note(scope, text, **session)
+        Refusal.check!(@session.manager(**session).note(scope, text), scope:, also: %i[not_found])
       end
 
-      # @param scope [String]
-      # @param dir [String, nil]
-      # @param agent_id [String, nil]
-      # @param parent_id [String, nil]
-      # @param stale_minutes [Integer, nil]
-      # @return [Manager::Result] :resumed, or :not_found when there is nothing to resume
-      # @raise [Refused] when the scope is held, or interrupted work is in the way
-      def resume(scope, **)
-        runner.call(CLI::Commands::Resume, scope:, **)
-      end
-
-      # Who a lock taken through this facade would name. Runs the `whoami`
-      # command against the same identity, and returns that identity rather
-      # than the printed lines.
+      # `alock resume`: take back interrupted work, notes and all.
       #
-      # @param dir [String, nil]
+      # @param scope [String]
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @return [Manager::Result] `:resumed`, or `:not_found` when there is nothing to resume
+      # @raise [Refused] when another agent holds an overlapping scope
+      def resume(scope, **session) = Refusal.check!(@session.manager(**session).resume(scope))
+
+      # `alock whoami`: who a lock taken through this facade would name.
+      #
       # @param agent_id [String, nil]
       # @param parent_id [String, nil]
       # @return [Identity]
-      def whoami(**options)
-        runner.call(CLI::Commands::Whoami, **options)
-        runner.identity_for(options)
-      end
+      def whoami(agent_id: nil, parent_id: nil) = @session.identity(agent_id:, parent_id:)
 
-      # @return [String] the directory of the bundled skill
-      def skills_path
-        runner.call(CLI::Commands::SkillsPath)
-      end
-
-      # `agent` is the command's `--for`. `into` wins when both are given,
-      # which is what the command does.
+      # `alock skills path`.
       #
-      # @param into [String, nil] skills directory. Nil uses the command's default.
-      # @param agent [String, nil] `claude` installs into ~/.claude/skills
-      # @param overwrite [Boolean] replace a copy that differs
-      # @return [Skill::Result] :installed or :current
-      # @raise [Refused] when the copy differs or the path is a symlink
+      # @return [String] the directory of the bundled skill
+      def skills_path = Skill.source
+
+      # `alock skills install`.
+      #
+      # @param into [String, nil] skills directory; wins over `agent` when both are given
+      # @param agent [String, nil] the CLI's `--for`: `claude` installs into ~/.claude/skills,
+      #   anything else into ~/.agents/skills
+      # @param overwrite [Boolean] replace an installed copy that differs
+      # @return [Skill::Result] `:installed` or `:current`
+      # @raise [Refused] when the installed copy differs, or is a symlink
       def skills_install(into: nil, agent: nil, overwrite: false)
-        args = { overwrite: overwrite }
-        args[:into] = into unless into.nil?
-        args[:for] = agent unless agent.nil?
-        runner.call(CLI::Commands::SkillsInstall, **args)
+        Refusal.check!(Skill.new(into: into || Skill.default_into(agent)).install(overwrite:))
       end
 
+      # `alock version`.
+      #
       # @return [String] {VERSION}
-      def version
-        runner.call(CLI::Commands::Version)
-      end
-
-      private
-
-      # @return [Backend]
-      attr_reader :backend
-
-      # @return [Runner]
-      attr_reader :runner
+      def version = VERSION
     end
 
+    # Built on first use, once per process; see {.local} and {.distributed}.
+    LOCAL_FACADE = Facade::Memo.new { Facade.new(strategies: %w[file]) }
+    DISTRIBUTED_FACADE = Facade::Memo.new { Facade.new(strategies: %w[redis]) }
+    private_constant :LOCAL_FACADE, :DISTRIBUTED_FACADE
+
     class << self
-      # A file-store facade, built on first use and reused after that.
-      # Thread-safe. Independent of {.distributed} and of {Facade.new}.
+      # The process-wide file-store facade, built on first use. Thread-safe,
+      # and independent of {.distributed} and of every {Facade.new}.
       #
       # @return [Facade]
-      def local
-        memo(:local) { Facade.new(strategies: %w[file]) }
-      end
+      def local = LOCAL_FACADE.value
 
-      # A Redis facade, built on first use and reused after that.
-      # Raises when Redis does not answer, and does not keep that failure:
-      # a later call tries again. Thread-safe.
+      # The process-wide Redis facade, built on first use from `REDIS_URL`
+      # (or {Facade::DEFAULT_REDIS_URL}). Thread-safe. A failed build is not
+      # kept: the next call tries Redis again.
       #
       # @return [Facade]
-      # @raise [RedisUnavailableError] when `REDIS_URL`, or {Facade::DEFAULT_REDIS_URL}, does not answer
-      def distributed
-        memo(:distributed) do
-          Facade.new(strategies: %w[redis], redis_url: ENV.fetch("REDIS_URL", Facade::DEFAULT_REDIS_URL))
-        end
-      end
+      # @raise [RedisUnavailableError] when that Redis does not answer
+      def distributed = DISTRIBUTED_FACADE.value
 
-      # A new facade. Same default as the `alock` command: try Redis, and
-      # use the file store when it does not answer.
+      # A new facade, defaulting like `alock`: Redis when it answers, the
+      # file store when it does not. Never memoized.
       #
-      # @param strategies [Array<String, Symbol>]
-      # @param options [Hash] `redis_url`, `agent_id`, `parent_id`, `stale_minutes`
+      # @param strategies [Array<String, Symbol>] see {Facade#initialize}
+      # @param redis_url [String, nil] see {Facade#initialize}
+      # @param agent_id [String, nil] see {Facade#initialize}
+      # @param parent_id [String, nil] see {Facade#initialize}
+      # @param stale_minutes [Integer, nil] see {Facade#initialize}
       # @return [Facade]
-      def facade(strategies: Facade::DEFAULT_STRATEGIES, **)
-        Facade.new(strategies: strategies, **)
+      def facade(strategies: Facade::DEFAULT_STRATEGIES, redis_url: nil, agent_id: nil, parent_id: nil,
+                 stale_minutes: nil)
+        Facade.new(strategies:, redis_url:, agent_id:, parent_id:, stale_minutes:)
       end
 
-      # Drop the memoized {.local} and {.distributed} facades.
+      # Forget {.local} and {.distributed}, so the next call builds each anew.
+      # For tests, and for a process whose `REDIS_URL` changed.
       #
       # @return [void]
       def reset_facades!
-        FACADE_MUTEX.synchronize do
-          @local_facade = nil
-          @distributed_facade = nil
-        end
-      end
-
-      private
-
-      # Serializes the first build of {.local} and of {.distributed}.
-      FACADE_MUTEX = Mutex.new
-      private_constant :FACADE_MUTEX
-
-      # @param name [Symbol]
-      # @return [Facade]
-      def memo(name)
-        ivar = :"@#{name}_facade"
-        existing = instance_variable_get(ivar)
-        return existing if existing
-
-        FACADE_MUTEX.synchronize do
-          instance_variable_get(ivar) || instance_variable_set(ivar, yield)
-        end
+        LOCAL_FACADE.reset
+        DISTRIBUTED_FACADE.reset
       end
     end
   end

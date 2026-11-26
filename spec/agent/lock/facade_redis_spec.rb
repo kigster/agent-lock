@@ -26,6 +26,31 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
     expect(first.check("workflow/**", dir: checkout, agent_id: "a").status).to eq(:mine)
   end
 
+  it "memoizes distributed once Redis answers, apart from local" do
+    Agent::Lock.reset_facades!
+    with_env("REDIS_URL" => url_a) do
+      held = Agent::Lock.distributed
+
+      expect([Agent::Lock.distributed, held.backend_name]).to eq([held, "redis"])
+      expect(held).not_to equal(Agent::Lock.local)
+    end
+  ensure
+    Agent::Lock.reset_facades!
+  end
+
+  it "lets exactly one of several threads take a scope through one Redis facade" do
+    facade = described_class.new(strategies: %w[redis], redis_url: url_a)
+    outcomes = Array.new(8) do |index|
+      Thread.new do
+        facade.acquire("workflow/**", dir: checkout, agent_id: "agent-#{index}") && :acquired
+      rescue Agent::Lock::Refused
+        :refused
+      end
+    end.map(&:value)
+
+    expect(outcomes.tally).to eq(acquired: 1, refused: 7)
+  end
+
   it "shares locks when two facades are given the same URL" do
     first = described_class.new(strategies: %w[redis], redis_url: url_a, agent_id: "a")
     second = described_class.new(strategies: %w[redis], redis_url: url_a, agent_id: "b")

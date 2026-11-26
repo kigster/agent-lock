@@ -4,67 +4,54 @@ require "redis"
 require_relative "../error"
 require_relative "../store/file_system_store"
 require_relative "../store/redis_store"
+require_relative "strategies"
 
 module Agent
   module Lock
     class Facade
-      # The one backend this facade will use for its whole life.
+      # The one store a facade uses for its whole life, chosen once.
       #
-      # Strategies are tried in order. `file` and `filesystem` are the file
-      # store. `redis` is kept when that URL answers. A list that never
-      # reaches a usable store raises {RedisUnavailableError}.
+      # Strategies are tried in order: `file` is always usable, `redis` only
+      # when its URL answers. A list that runs out without either raises
+      # {RedisUnavailableError}.
+      #
+      # Frozen once built. The `::Redis` client it keeps is shared by every
+      # thread calling the facade; redis-rb serializes its own commands, so
+      # sharing it is safe.
       class Backend
-        # Names that mean the file store.
-        FILE_ALIASES = %w[file filesystem].freeze
+        # Seconds to wait for Redis to answer the probe, so a dead URL costs
+        # a fraction of a second instead of the client's default timeout.
+        PROBE_TIMEOUT = 0.2
 
         # @return [String] "redis" or "file"
         attr_reader :name
 
-        # @return [String] the Redis URL this facade was given
+        # @return [String] the Redis URL this backend was given
         attr_reader :redis_url
 
-        # @return [::Redis, nil] the connection `redis` is using. Nil for the file store.
-        attr_reader :client
-
-        # @param strategies [Array<String, Symbol>]
+        # @param strategies [Array<String, Symbol>] see {Strategies.parse}
         # @param redis_url [String]
         # @raise [ArgumentError] when a strategy name is unknown, or the list is empty
         # @raise [RedisUnavailableError] when Redis was required and did not answer
         def initialize(strategies:, redis_url:)
           @redis_url = redis_url
-          @name, @client = resolve(normalize(strategies))
+          @name, @client = resolve(Strategies.parse(strategies))
+          freeze
         end
 
         # @param tree [Tree]
-        # @return [Store::FileSystemStore, Store::RedisStore]
+        # @return [Store::FileSystemStore, Store::RedisStore] a store over `tree`
         def store_for(tree)
           return Store::FileSystemStore.new(tree) if name == "file"
 
-          Store::RedisStore.new(tree, client: client, url: redis_url)
+          Store::RedisStore.new(tree, client: @client, url: redis_url)
         end
 
         private
 
-        # @param strategies [Array<String, Symbol>]
-        # @return [Array<String>]
-        def normalize(strategies)
-          names = Array(strategies).map { |name| name.to_s.downcase }
-          raise ArgumentError, "strategies must name at least one of redis, file" if names.empty?
-
-          names.map { |name| known(name) }.uniq
-        end
-
-        # @param name [String]
-        # @return [String]
-        def known(name)
-          return "file" if FILE_ALIASES.include?(name)
-          return name if name == "redis"
-
-          raise ArgumentError, "unknown strategy #{name.inspect}, expected redis or file"
-        end
-
         # @param names [Array<String>]
-        # @return [Array(String, ::Redis, nil)]
+        # @return [Array(String, ::Redis), Array(String, nil)]
+        # @raise [RedisUnavailableError]
         def resolve(names)
           names.each do |name|
             return ["file", nil] if name == "file"
@@ -76,12 +63,12 @@ module Agent
           raise RedisUnavailableError, "Redis did not answer on #{redis_url}"
         end
 
-        # @return [::Redis, nil]
+        # @return [::Redis, nil] a client that has answered once, or nil
         def connect
-          client = ::Redis.new(url: redis_url, timeout: 0.2, connect_timeout: 0.2)
-          client.info["redis_version"]
+          client = ::Redis.new(url: redis_url, timeout: PROBE_TIMEOUT, connect_timeout: PROBE_TIMEOUT)
+          client.ping
           client
-        rescue Redis::BaseError, SystemCallError, SocketError
+        rescue ::Redis::BaseError, SystemCallError, SocketError
           close_quietly(client)
           nil
         end

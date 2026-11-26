@@ -27,6 +27,22 @@ RSpec.describe Agent::Lock::Skill do
     it { is_expected.to match(/^description: Use when /) }
   end
 
+  describe ".default_into" do
+    around { |example| with_env("HOME" => home) { example.run } }
+
+    it "is the shared ~/.agents/skills when no agent is named" do
+      expect(described_class.default_into).to eq(File.join(home, ".agents", "skills"))
+    end
+
+    it "is ~/.claude/skills for claude" do
+      expect(described_class.default_into("claude")).to eq(File.join(home, ".claude", "skills"))
+    end
+
+    it "is the shared directory for any other agent" do
+      expect(described_class.default_into("codex")).to eq(File.join(home, ".agents", "skills"))
+    end
+  end
+
   describe ".bundled" do
     it "names every skill the gem ships" do
       expect(described_class.bundled).to include("agent-lock")
