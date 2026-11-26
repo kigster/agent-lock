@@ -11,13 +11,13 @@ require "coverage/badge"
 # The directory is made up front because the move happens in `at_exit`, and
 # without it the whole suite dies there — which reports as a passing run
 # followed by a stack trace.
-REPO_ROOT = File.expand_path("../..", __dir__)
+REPO_ROOT = File.expand_path("../", __dir__)
 BADGE_DIR = File.join(REPO_ROOT, "docs", "badges")
-FileUtils.mkdir_p(BADGE_DIR)
 
 have_local_redis = `(echo info | redis-cli -u redis://127.0.0.1:6379/ 2>&1 | \
   egrep -q redis_version && echo 1 || echo 0) | tr -d '\n'`
 
+# Never use remote Redis for testing
 if have_local_redis == "1"
   ENV["REDIS_URL"] = "redis://127.0.0.1:6379/"
   warn "Using local Redis: #{ENV.fetch("REDIS_URL", nil)}"
@@ -46,13 +46,12 @@ end
 SimpleCov.at_exit do
   SimpleCov.result.format!
   # rubocop: disable-next RSpec/Output
-  puts "Coverage: #{SimpleCov.result.covered_percent.round(2)}%"
+  puts "Coverage: #{SimpleCov.result.covered_percent.round(2)}%, saving into #{BADGE_DIR}/coverage_badge.svg"
   FileUtils.mkdir_p(BADGE_DIR)
   FileUtils.mv("coverage/badge.svg", File.join(BADGE_DIR, "coverage_badge.svg"))
 end
 
 require "tmpdir"
-
 require "agent/lock"
 require "open3"
 require "rbconfig"

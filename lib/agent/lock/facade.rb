@@ -40,6 +40,12 @@ module Agent
     # {Store::Mismatch} in one already claimed for the other, so a facade
     # and the CLI can never take the same scope in two stores.
     #
+    # `async: true` mixes {Concurrent::Async} into that facade alone. Direct
+    # calls stay synchronous. `locker.async.acquire(scope, intent)` returns a
+    # {Concurrent::IVar}: `value` is the result, or nil when the call raised
+    # (`reason` holds it, `value!` re-raises). The proxy takes positional
+    # arguments only, so set `agent_id:` on the facade and call from the checkout.
+    #
     # @example File store, signed by a sub-agent
     #   locks = Agent::Lock.local
     #   locks.acquire("lib/**", "rewriting billing", agent_id: "luke-backend")
@@ -62,12 +68,20 @@ module Agent
       # @param agent_id [String, nil] signs locks when a call does not name its own
       # @param parent_id [String, nil] that holder's parent, likewise
       # @param stale_minutes [Integer, nil] nil reads `AGENT_LOCK_STALE_MINUTES`
+      # @param async [Boolean] mix {Concurrent::Async} into this instance.
+      #   `locker.async.acquire` returns a {Concurrent::IVar}; see the class note
       # @raise [RedisUnavailableError] when no strategy but `redis` is left and it does not answer
       # @raise [ArgumentError] when `strategies` is empty or names an unknown backend
-      def initialize(strategies: DEFAULT_STRATEGIES, redis_url: nil, agent_id: nil, parent_id: nil,
-                     stale_minutes: nil)
+      # rubocop:disable-next Metrics/ParameterLists
+      def initialize(strategies: DEFAULT_STRATEGIES,
+                     redis_url: nil,
+                     agent_id: nil,
+                     parent_id: nil,
+                     stale_minutes: nil,
+                     async: false)
         @backend = Backend.new(strategies:, redis_url: redis_url || ENV.fetch("REDIS_URL", DEFAULT_REDIS_URL))
         @session = Session.new(@backend, agent_id:, parent_id:, stale_minutes:)
+        become_async if async
         freeze
       end
 
@@ -79,18 +93,33 @@ module Agent
 
       # `alock acquire`: claim a scope before writing in it.
       #
+      # With a block, yields the {Manager::Result} and returns the block's
+      # value. The lock is released afterwards only when this call took it
+      # (`:acquired`). `:already_mine` yields and leaves the lock you already
+      # held, so a nested block does not drop the outer one. A refusal raises
+      # before the block runs. An exception from the block releases, then propagates.
+      #
       # @param scope [String] a path, a directory, or a glob such as `lib/**`
       # @param intent [String, nil] what the holder is about to do
       # @param enforce [Boolean] also freeze the matched files (macOS only)
       # @param allow_wide [Boolean] let `enforce` freeze more than {Freeze::LIMIT} files
       # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
-      # @return [Manager::Result] `:acquired`, or `:already_mine` when a lock of yours covers it
+      # @yieldparam result [Manager::Result] `:acquired`, or `:already_mine`
+      # @return [Manager::Result] without a block: `:acquired`, or `:already_mine`
+      # @return [Object] with a block: the block's value
       # @raise [Refused] held by another agent, interrupted work, or exactly your parent's scope
       # @raise [Scope::Invalid] when the scope is empty or outside the checkout
       # @raise [Freeze::TooBroad] when `enforce` exceeds the limit without `allow_wide`
       def acquire(scope, intent = nil, enforce: false, allow_wide: false, **session)
-        result = @session.manager(**session).acquire(scope, intent: intent || "unspecified", enforce:, wide: allow_wide)
-        Refusal.check!(result, scope:)
+        result = Refusal.check!(
+          @session.manager(**session).acquire(scope, intent: intent || "unspecified", enforce:, wide: allow_wide),
+          scope:
+        )
+        return result unless block_given?
+
+        yield result
+      ensure
+        release(scope, **session) if block_given? && result&.status == :acquired
       end
 
       # `alock release`.
@@ -183,6 +212,20 @@ module Agent
       #
       # @return [String] {VERSION}
       def version = VERSION
+
+      private
+
+      # Extend this instance, then initialize, then freeze. Including
+      # {Concurrent::Async} on the class initializes after `freeze` and
+      # raises FrozenError. Loaded only here, so the CLI never requires it.
+      #
+      # @return [void]
+      def become_async
+        require "concurrent/async"
+        extend Concurrent::Async
+
+        init_synchronization
+      end
     end
 
     # Built on first use, once per process; see {.local} and {.distributed}.

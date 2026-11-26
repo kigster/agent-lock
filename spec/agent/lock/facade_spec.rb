@@ -113,6 +113,42 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
       expect { facade.acquire("workflow/**", dir: checkout, agent_id: "rey-frontend") }
         .to raise_error(Agent::Lock::Refused, /INTERRUPTED WORK/)
     end
+
+    context "with a block" do
+      it "yields the result, returns the block's value, and releases" do
+        yielded = nil
+        value = facade.acquire("workflow/**", "billing", dir: checkout) do |lock|
+          yielded = lock.status
+          :done
+        end
+
+        expect([value, yielded]).to eq(%i[done acquired])
+        expect(facade.check("workflow/**", dir: checkout).status).to eq(:free)
+      end
+
+      it "releases when the block raises, then lets the exception out" do
+        expect { facade.acquire("workflow/**", dir: checkout) { raise "boom" } }
+          .to raise_error(RuntimeError, "boom")
+        expect(facade.check("workflow/**", dir: checkout).status).to eq(:free)
+      end
+
+      it "does not enter the block when the acquire is refused" do
+        facade.acquire("workflow/**", dir: checkout)
+        yielded = false
+
+        expect { facade.acquire("workflow/**", dir: checkout, agent_id: "rey-frontend") { yielded = true } }
+          .to raise_error(Agent::Lock::Refused)
+        expect(yielded).to be(false)
+      end
+
+      it "leaves a lock this identity already held" do
+        facade.acquire("workflow/**", dir: checkout)
+
+        facade.acquire("workflow/lib/cli.rb", dir: checkout) { :inner }
+
+        expect(facade.check("workflow/**", dir: checkout).status).to eq(:mine)
+      end
+    end
   end
 
   describe "#release" do

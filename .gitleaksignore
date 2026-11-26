@@ -1,0 +1,35 @@
+frontend/.next/dev/cache/.rscinfo:generic-api-key:1
+frontend/.next/dev/cache/turbopack/v16.2.10/00000001.sst:github-pat:216
+frontend/.next/dev/cache/turbopack/v16.2.10/00000001.sst:github-pat:346
+frontend/.next/dev/cache/turbopack/v16.2.10/00000010.sst:github-pat:34595
+frontend/.next/dev/cache/turbopack/v16.2.10/00000010.sst:github-pat:8669
+frontend/.next/dev/cache/turbopack/v16.2.10/00000022.sst:github-pat:18214
+frontend/.next/dev/cache/turbopack/v16.2.10/00000022.sst:github-pat:89371
+frontend/.next/dev/cache/turbopack/v16.2.10/00000031.sst:github-pat:5877
+frontend/.next/dev/cache/turbopack/v16.2.10/00000031.sst:github-pat:6214
+frontend/.next/dev/cache/turbopack/v16.2.10/00000037.sst:github-pat:67
+frontend/.next/dev/cache/turbopack/v16.2.10/00000043.sst:github-pat:1071
+frontend/.next/dev/cache/turbopack/v16.2.10/00000043.sst:github-pat:873
+frontend/.next/dev/cache/turbopack/v16.2.10/00000049.sst:github-pat:86
+frontend/.next/dev/prerender-manifest.json:generic-api-key:8
+frontend/.next/dev/prerender-manifest.json:generic-api-key:9
+frontend/.next/dev/server/server-reference-manifest.json:generic-api-key:4
+rails/tmp/cache/bootsnap/compile-cache-iseq/da/bf8143d88ecdc3:private-key:680
+
+# rails/spec — spec 017 ingestion specs: form-line identifier literals from
+# the shared 008/017 line list (form dot figure-column) that the
+# generic-api-key rule mistakes for keys. Synthetic values only.
+rails/spec/domains/ingestion/facade_spec.rb:generic-api-key:48
+rails/spec/domains/ingestion/facade_spec.rb:generic-api-key:77
+rails/spec/domains/ingestion/extracted_return_field_spec.rb:generic-api-key:29
+rails/spec/domains/ingestion/extracted_return_field_spec.rb:generic-api-key:32
+rails/spec/domains/ingestion/extracted_return_field_spec.rb:generic-api-key:39
+rails/spec/domains/ingestion/extracted_return_field_spec.rb:generic-api-key:74
+rails/spec/domains/ingestion/extracted_return_field_spec.rb:generic-api-key:120
+rails/spec/domains/ingestion/deterministic_rail_spec.rb:generic-api-key:92
+rails/spec/domains/ingestion/document_ai_rail_spec.rb:generic-api-key:26
+
+# frontend/src — plan 035 key-pair test fixture. The flagged literal is
+# base64 for the ASCII text "private-key-32-bytes-base64-here"; no key
+# material, real or generated, appears in the suite.
+frontend/src/components/onboarding/encryption-key-step.test.tsx:generic-api-key:19

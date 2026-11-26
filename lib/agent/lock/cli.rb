@@ -17,33 +17,43 @@ module Agent
       # line, so guessing it wrong is not a cosmetic mistake.
       PROGRAM_NAME = "alock"
 
+      COLORS = Pastel.new
+
+      TOP_LINE    = "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+      BOTTOM_LINE = "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
       # The column dry-cli-help wraps at, rather than the terminal's width,
       # so help reads the same in a wide terminal, a narrow one, and a log.
       HELP_WIDTH = 85
 
       # What `alock -h` says before it lists the commands.
-      DESCRIPTION = <<~TEXT
+      DESCRIPTION = <<~TEXT.freeze
         Advisory locks for AI coding agents that share a checkout, or a branch
-        across machines. Claim the file, directory or glob you are about to write
-        with `acquire`; any other agent that claims or checks an overlapping scope
-        is refused and told who holds it, since when, and why. Locks are advisory:
-        they protect only from agents that check.
+        across worktrees and optionally across machines. Claim the file, directory
+        or glob you are about to write to with `acquire`; any other agent that claims
+        or checks an overlapping scope is refused and told who holds it, since when,
+        and why. Locks are advisory only: #{COLORS.blue("they protect agents from working on the same files as other agents that also check for locks")}.
 
         Sub-agents of one session share its process, so each must name itself on
-        every call: AGENT_ID=<name> alock acquire ... Run `alock whoami` to see the
+        every call: #{COLORS.blue("AGENT_ID=<name> alock acquire ...")} Run `alock whoami` to see the
         name your locks would carry.
 
-        Backends: Redis when one answers on REDIS_URL or localhost:6379 (shared
-        across machines), otherwise a file store inside .git. The first process in
-        a checkout records the choice; AGENT_LOCK_BACKEND=redis|file overrides it.
+        Backends: Redis when one answers on env REDIS_URL (shared across machines),
+        or localhost:6379 (local only). Otherwise a file store inside .git (also local#{" "}
+        only). The first process in a checkout records the choice; setting environment
+        variable #{COLORS.blue("AGENT_LOCK_BACKEND=redis|file")} overrides it.
 
         Exit codes: 0 done, 1 refused or held by someone else, 2 could not run.
+
+        If you are using the gem from a Ruby application, you should default to the Ruby
+        API. Every CLI command is available via Ruby API, as described in the README:
+        #{COLORS.cyan.bold.underline("https://github.com/kigster/agent-lock#ruby-api")}
       TEXT
 
       Dry::CLI::Help.configure do
-        title "Agent Lock, Version #{Agent::Lock::VERSION}"
+        styles { heading :bold, :magenta }
+        title "\n#{TOP_LINE}\n#{COLORS.yellow("┃    Agent/Lock — Distributed Advisory Locker")} ┃ #{COLORS.green.bold("Version #{Agent::Lock::VERSION}")}                   ┃\n#{BOTTOM_LINE}"
         description DESCRIPTION
-        epilogue "Documentation: https://github.com/kigster/agent-lock"
+        epilogue "Documentation: #{COLORS.cyan.bold.underline("https://github.com/kigster/agent-lock")}"
         width HELP_WIDTH
       end
 
