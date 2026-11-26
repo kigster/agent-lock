@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.1.0] - 2026-11-25
+
+### Added
+
+- `Agent::Lock::Facade`: every command as a Ruby method, run in-process. `Agent::Lock.local` (file store), `Agent::Lock.distributed` (Redis, or `RedisUnavailableError`) and `Agent::Lock.facade` (Redis, else the file store). Thread-safe. See `README.md#from-ruby`.
+- `Agent::Lock::Refused` and `Agent::Lock::RedisUnavailableError`.
+
+### Fixed
+
+- A fingerprint identity no longer contains spaces when the session's process has retitled itself (macOS reports a Claude Code background job as `claude bg-spare`). Only the first word is kept, so the holder id changes for such sessions.
+
 ## [4.0.0] - 2026-11-24
 
 ### Changed
