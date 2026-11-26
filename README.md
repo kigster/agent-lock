@@ -37,6 +37,40 @@ alock version  # alock must be on PATH
 
 Or add `gem "agent-lock"` to a Gemfile.
 
+### From Ruby
+
+The same commands are methods on `Agent::Lock::Facade`. A refusal the command would print on stderr is raised as `Agent::Lock::Refused`. The message is that text, and `result` is the `Manager::Result` behind it. Outcomes the command prints on stdout, including `NOT LOCKED`, come back as that result.
+
+```ruby
+require "agent/lock"
+
+locks = Agent::Lock.local # file store, built once per process
+locks.acquire("lib/billing/**", "rewriting the invoices", agent_id: "luke-backend")
+locks.note("lib/billing/**", "totals done, specs red", agent_id: "luke-backend")
+locks.check("lib/billing/tax.rb", agent_id: "luke-backend") # :mine
+locks.release_all(agent_id: "luke-backend")
+
+Agent::Lock.distributed # Redis only; raises RedisUnavailableError if it does not answer
+
+locks = Agent::Lock::Facade.new(
+  strategies: %w[redis file], # file is used when that Redis does not answer
+  redis_url: ENV.fetch("REDIS_URL", "redis://localhost:6379")
+)
+
+begin
+  locks.acquire("lib/billing/tax.rb", agent_id: "billing-b")
+rescue Agent::Lock::Refused => error
+  error.message                 # the stderr text, including who holds it
+  error.result.record.agent_id
+end
+```
+
+`strategies` are tried in order. `filesystem` is another name for `file`. A list that is only `redis` raises `Agent::Lock::RedisUnavailableError` (a `RuntimeError`) at construction when that URL does not answer.
+
+`Agent::Lock.local` and `Agent::Lock.distributed` are memoized separately, and safe to call from several threads. `Facade.new` and `Agent::Lock.facade` each build a fresh facade and leave those two in place. Two facades pointed at two Redis URLs keep separate locks. A facade uses the backend it resolved and leaves the checkout's backend marker untouched, so every process that must see the same locks has to be given the same strategies and the same URL.
+
+`check`, `list`, `mine`, `release`, `resume`, `whoami`, `skills_path`, `skills_install` and `version` take the same arguments as the command. `break` is `break_lock` (it returns the result; the command succeeded). `acquire` takes `enforce:` and `allow_wide:`. `skills_install` takes `into:`, `agent:` (the `--for` flag) and `overwrite:`. `whoami` returns the `Identity` the lock would be signed with.
+
 ### Claim before you write
 
 ```bash

@@ -49,7 +49,23 @@ module Agent
 
           # @param dir [String, nil] the `--dir` option; nil means the current directory
           # @return [Manager] bound to the tree that contains `dir`
-          def manager(dir) = Manager.new(tree: Tree.for(dir || "."))
+          def manager(dir)
+            tree = Tree.for(dir || ".")
+            Manager.new(tree: tree, **manager_overrides(tree))
+          end
+
+          # Hooks {Facade} sets on the launcher. All nil when the command
+          # line runs, so this adds nothing to that path.
+          #
+          # @param tree [Tree]
+          # @return [Hash]
+          def manager_overrides(tree)
+            overrides = {}
+            overrides[:store] = launcher.store_for.call(tree) if launcher.store_for
+            overrides[:identity] = launcher.identity if launcher.identity
+            overrides[:stale_minutes] = launcher.stale_minutes unless launcher.stale_minutes.nil?
+            overrides
+          end
 
           # @param text [String] one line of the deliverable
           # @return [void]

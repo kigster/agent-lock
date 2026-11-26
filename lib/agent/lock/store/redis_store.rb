@@ -55,10 +55,13 @@ module Agent
         attr_reader :tree, :client
 
         # @param tree [Tree] the checkout whose repository names the namespace
-        # @param client [::Redis, nil] nil connects to the first URL that answers
+        # @param client [::Redis, nil] nil connects through {.create_client}.
+        #   A facade passes its own client so two facades can use two servers.
+        # @param url [String, nil] the URL `client` speaks. Nil uses {.url}.
         # @raise [RuntimeError] when no client can be created
-        def initialize(tree, client: nil)
+        def initialize(tree, client: nil, url: nil)
           @tree = tree
+          @url = url
 
           if client.nil?
             client, error = self.class.create_client
@@ -69,7 +72,7 @@ module Agent
             @client = client
           end
 
-          raise "no functional Redis client could be created for #{self.class.url}" unless @client
+          raise "no functional Redis client could be created for #{self.url}" unless @client
         end
 
         # @return [String]
@@ -162,8 +165,9 @@ module Agent
         # @return [String] the key prefix every lock in this repository shares
         def namespace = "#{NAMESPACE}:#{digest}"
 
-        # @return [String]
-        def url = self.class.url
+        # @return [String] the URL this store was given, or the one
+        #   {.create_client} settled on when it was not
+        def url = @url || self.class.url
 
         # @return [String] the first 12 hex digits of the repository's SHA-256
         def digest = ::Digest::SHA256.hexdigest(tree.repo)[0, 12]

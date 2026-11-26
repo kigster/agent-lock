@@ -42,7 +42,7 @@ module Agent
           # @param options [Hash] `:json`
           # @return [void]
           def call(**options)
-            identity = Identity.current
+            identity = launcher.identity || Identity.current
             warn_shared(identity) unless identity.source == :explicit
             return say(JSON.pretty_generate(as_hash(identity))) if options[:json]
 
