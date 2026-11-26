@@ -34,20 +34,6 @@ module Agent
       # @return [Integer, nil]
       attr_accessor :exit_code
 
-      # Set by {Facade} so the command object it runs uses that facade's
-      # store. Nil on the command line, which keeps {Store.for}.
-      #
-      # @return [Proc, nil]
-      attr_accessor :store_for
-
-      # Set by {Facade} when the caller names an agent. Nil reads {Identity.current}.
-      #
-      # @return [Identity, nil]
-      attr_accessor :identity
-
-      # @return [Integer, nil] nil reads AGENT_LOCK_STALE_MINUTES
-      attr_accessor :stale_minutes
-
       # The name the user typed, `alock` or `agent-lock`, for every hint and
       # error prefix. A hint naming the other one may not be on the PATH, or
       # may be the old shell script that shadows this gem's `agent-lock`.

@@ -33,6 +33,19 @@ RSpec.describe Agent::Lock::Identity do
       expect(identity.id).to match(/\A[\w.-]+-[0-9a-f]{8}\z/)
     end
 
+    # macOS reports a Claude Code background job's process title, spaces and all.
+    it "keeps only the first word of a process title, so the id has no spaces" do
+      allow(Agent::Lock::ProcessInfo).to receive(:command).and_return("claude bg-spare")
+
+      expect(identity.id).to match(/\Aclaude-[0-9a-f]{8}\z/)
+    end
+
+    it "drops characters an id may not hold, falling back to agent when none are left" do
+      allow(Agent::Lock::ProcessInfo).to receive(:command).and_return("(*)")
+
+      expect(identity.id).to match(/\Aagent-[0-9a-f]{8}\z/)
+    end
+
     it "carries the evidence a later run needs to ask whether it is still alive" do
       expect(identity.evidence).to include(:pid, :started, :host)
     end
