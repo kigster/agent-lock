@@ -26,7 +26,7 @@ module Agent
     # The one moment that default is decided is also the one moment two
     # processes could race: both find a virgin tree, both probe Redis, and a
     # flaky answer could hand them different defaults before either writes the
-    # marker. So the marker is claimed atomically (first `O_CREAT|O_EXCL` wins)
+    # marker. So the marker is claimed atomically (the first hard link wins)
     # and every process builds from whatever ends up on disk, never from its
     # own guess, so a race can pick either backend but never a split.
     module Store

@@ -415,7 +415,7 @@ Either way, every claim checks for conflicts and writes its lock while holding o
 > [!CAUTION]
 > Picking a default from whether Redis happens to answer is still never a runtime auto-*switch*. If one agent found a running Redis and switched to it while the agent beside it did not, the two would take locks in different stores, see nothing of each other, and both report success — worse than no lock at all. The first store created in a tree records its backend in a marker file, and every later process in that tree is bound to it regardless of what Redis does next; a mismatch stops the run rather than silently picking the other one.
 >
-> That default is decided at the one moment two processes could otherwise race: both find a virgin tree, both probe Redis, and a flaky answer could hand them different defaults before either writes the marker. The marker is claimed atomically — the first `O_CREAT|O_EXCL` wins — and every process builds from whatever ends up on disk, never from its own guess, so a race can land on either backend but never on a split.
+> That default is decided at the one moment two processes could otherwise race: both find a virgin tree, both probe Redis, and a flaky answer could hand them different defaults before either writes the marker. The marker is claimed atomically — written to a temp file and hard-linked into place, so the first link wins and the marker never exists empty — and every process builds from whatever ends up on disk, never from its own guess, so a race can land on either backend but never on a split.
 
 The `redis` gem ships as a dependency of this one now, since deciding the default means probing for it. If you never want that probe, or never install a local Redis, set `AGENT_LOCK_BACKEND=file` yourself.
 
