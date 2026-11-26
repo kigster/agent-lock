@@ -72,6 +72,28 @@ RSpec.describe Agent::Lock::Store, type: :checkout do
         expect(described_class.recorded(tree)).to eq("redis")
       end
     end
+
+    # The marker used to be created first and written after, so a thread
+    # that lost the race could read "" and disagree with the winner.
+    it "gives every concurrent claimant the same answer, never an empty one" do
+      gate = Queue.new
+      threads = Array.new(16) do |index|
+        Thread.new do
+          gate.pop
+          described_class.claim(tree, index.even? ? "file" : "redis")
+        end
+      end
+      16.times { gate << true }
+
+      expect(threads.map(&:value).uniq).to eq([described_class.recorded(tree)])
+    end
+
+    it "reads a marker that exists but is still empty as no marker" do
+      FileUtils.mkdir_p(File.dirname(described_class.marker_path(tree)))
+      File.write(described_class.marker_path(tree), "")
+
+      expect(described_class.recorded(tree)).to be_nil
+    end
   end
 
   describe ".default_backend" do
