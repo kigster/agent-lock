@@ -94,6 +94,40 @@ RSpec.describe Agent::Lock::Store, type: :checkout do
 
       expect(described_class.recorded(tree)).to be_nil
     end
+
+    # Each caller falling back to its own guess would split the tree.
+    it "refuses a marker that stays empty rather than letting callers disagree" do
+      allow(described_class).to receive(:sleep)
+      FileUtils.mkdir_p(File.dirname(described_class.marker_path(tree)))
+      File.write(described_class.marker_path(tree), "")
+
+      expect { described_class.claim(tree, "file") }
+        .to raise_error(Agent::Lock::Store::Mismatch, /exists but is empty/)
+    end
+
+    it "waits out an older alock that created the marker but has not written it yet" do
+      path = described_class.marker_path(tree)
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, "")
+      writer = Thread.new do
+        sleep 0.05
+        File.write(path, "redis\n")
+      end
+
+      expect(described_class.claim(tree, "file")).to eq("redis")
+    ensure
+      writer&.join
+    end
+
+    it "falls back to the exclusive create where hard links are not supported" do
+      allow(File).to receive(:link).and_raise(Errno::ENOSYS)
+
+      aggregate_failures do
+        expect(described_class.claim(tree, "redis")).to eq("redis")
+        expect(described_class.recorded(tree)).to eq("redis")
+        expect(Dir.glob("#{described_class.marker_path(tree)}.*.tmp")).to be_empty
+      end
+    end
   end
 
   describe ".default_backend" do

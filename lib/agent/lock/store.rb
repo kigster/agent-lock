@@ -98,7 +98,10 @@ module Agent
         publish(path, name)
         name
       rescue Errno::EEXIST
-        settled(tree) || name
+        # Falling back to `name` here would let every caller keep its own
+        # guess about a marker that stays empty: a silent split.
+        settled(tree) || raise(Mismatch, "#{marker_path(tree)} exists but is empty; " \
+                                         "write file or redis into it, or delete it")
       rescue SystemCallError
         name
       end
@@ -110,10 +113,15 @@ module Agent
       def publish(path, name)
         temp = "#{path}.#{Process.pid}.#{SecureRandom.hex(6)}.tmp"
         File.write(temp, "#{name}\n")
-        File.link(temp, path)
-      rescue Errno::EPERM, Errno::ENOTSUP, Errno::EOPNOTSUPP
-        # A filesystem without hard links falls back to the exclusive create.
-        File.write(path, "#{name}\n", mode: File::WRONLY | File::CREAT | File::EXCL)
+        begin
+          File.link(temp, path)
+        rescue Errno::EEXIST
+          raise
+        rescue SystemCallError
+          # Any filesystem that cannot hard-link falls back to the exclusive
+          # create, whose create-then-write window `settled` covers.
+          File.write(path, "#{name}\n", mode: File::WRONLY | File::CREAT | File::EXCL)
+        end
       ensure
         FileUtils.rm_f(temp) if temp
       end

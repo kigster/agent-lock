@@ -50,7 +50,8 @@ module Agent
         # @return [Store::FileSystemStore, Store::RedisStore] a store over `tree`
         # @raise [Store::Mismatch] when the tree's locks live in the other backend
         def store_for(tree)
-          established = Store.claim(tree, name)
+          # Read first: a claimed tree, the usual case, costs no write.
+          established = Store.recorded(tree) || Store.claim(tree, name)
           unless established == name
             raise Store::Mismatch, "this tree's locks live in #{established}, but this facade uses #{name}; " \
                                    "build it with strategies: %w[#{established}]"
