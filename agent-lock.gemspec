@@ -26,6 +26,7 @@ Gem::Specification.new do |spec|
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = "https://github.com/kigster/agent-lock"
   spec.metadata["changelog_uri"] = "https://github.com/kigster/agent-lock/blob/main/CHANGELOG.md"
+  spec.metadata["documentation_uri"] = "https://kigster.github.io/agent-lock/"
 
   spec.metadata["rubygems_mfa_required"] = "true"
 

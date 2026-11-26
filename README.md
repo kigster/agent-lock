@@ -1,6 +1,7 @@
 # Agent Lock `agent-lock` CLI
 
 [![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml)
+[![Docs](https://img.shields.io/badge/docs-YARD-blue)](https://kigster.github.io/agent-lock/)
 
 A CLI utility `alock` that supports advisory locks on files and folders with pluggable backends (redis and file system provided out of the box, with redis being the default if it's available locally). This locking tool is meant for coding agents that share a project, whether they run on one machine or on several: with every machine pointed at one Redis, it is a distributed lock.
 
