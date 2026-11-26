@@ -5,6 +5,7 @@ require_relative "store/file_system_store"
 require_relative "store/redis_store"
 
 require "fileutils"
+require "securerandom"
 
 module Agent
   module Lock
@@ -25,7 +26,7 @@ module Agent
     # The one moment that default is decided is also the one moment two
     # processes could race: both find a virgin tree, both probe Redis, and a
     # flaky answer could hand them different defaults before either writes the
-    # marker. So the marker is claimed atomically (first `O_CREAT|O_EXCL` wins)
+    # marker. So the marker is claimed atomically (the first hard link wins)
     # and every process builds from whatever ends up on disk, never from its
     # own guess, so a race can pick either backend but never a split.
     module Store
@@ -72,7 +73,8 @@ module Agent
       # @return [String, nil] the backend this tree already uses
       def recorded(tree)
         path = marker_path(tree)
-        File.exist?(path) ? File.read(path).strip : nil
+        value = File.exist?(path) ? File.read(path).strip : ""
+        value.empty? ? nil : value
       rescue SystemCallError
         nil
       end
@@ -82,18 +84,61 @@ module Agent
       # process wrote instead. Either way, every caller ends up building the
       # same backend for this tree.
       #
+      # The marker is written to a temp file and hard-linked into place, so
+      # it never exists empty. Created with `O_EXCL` and written afterwards,
+      # a loser of the race could read it in between, take "" for the
+      # winner's backend, and refuse a tree that was about to agree with it.
+      #
       # @param tree [Tree]
       # @param name [String] this process's proposed backend
       # @return [String] the backend actually recorded, which may not be `name`
       def claim(tree, name)
         path = marker_path(tree)
         FileUtils.mkdir_p(File.dirname(path))
-        File.write(path, "#{name}\n", mode: File::WRONLY | File::CREAT | File::EXCL)
+        publish(path, name)
         name
       rescue Errno::EEXIST
-        recorded(tree) || name
+        # Falling back to `name` here would let every caller keep its own
+        # guess about a marker that stays empty: a silent split.
+        settled(tree) || raise(Mismatch, "#{marker_path(tree)} exists but is empty; " \
+                                         "write file or redis into it, or delete it")
       rescue SystemCallError
         name
+      end
+
+      # @param path [String] the marker
+      # @param name [String]
+      # @return [void]
+      # @raise [Errno::EEXIST] when another process claimed the tree first
+      def publish(path, name)
+        temp = "#{path}.#{Process.pid}.#{SecureRandom.hex(6)}.tmp"
+        File.write(temp, "#{name}\n")
+        begin
+          File.link(temp, path)
+        rescue Errno::EEXIST
+          raise
+        rescue SystemCallError
+          # Any filesystem that cannot hard-link falls back to the exclusive
+          # create, whose create-then-write window `settled` covers.
+          File.write(path, "#{name}\n", mode: File::WRONLY | File::CREAT | File::EXCL)
+        end
+      ensure
+        FileUtils.rm_f(temp) if temp
+      end
+
+      # Waits briefly for a marker that exists but is still empty: an older
+      # `alock` creates it first and writes its name a moment later.
+      #
+      # @param tree [Tree]
+      # @return [String, nil] the recorded backend, or nil if none appeared
+      def settled(tree)
+        50.times do
+          value = recorded(tree)
+          return value if value
+
+          sleep 0.01
+        end
+        nil
       end
 
       # @param tree [Tree]

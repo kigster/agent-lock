@@ -17,6 +17,10 @@ module Agent
       # The skill's directory name, which is also the name it answers to.
       NAME = "agent-lock"
 
+      # The home-relative directory each agent keeps its skills under. Any
+      # agent not named here reads the shared `~/.agents`.
+      AGENT_DIRS = { "claude" => ".claude" }.freeze
+
       # Where the gem keeps its skills, one directory each.
       ROOT = File.expand_path("../../../skills", __dir__)
 
@@ -34,10 +38,10 @@ module Agent
         #   help text can say what `install` puts on disk
         def bundled = Dir.children(ROOT).select { |name| File.directory?(File.join(ROOT, name)) }.sort
 
-        # @return [String] where most agents other than Claude Code look for
-        #   a user's own skills; the CLI's `--for claude` points at
-        #   `~/.claude/skills` instead
-        def default_into = File.join(Dir.home, ".agents", "skills")
+        # @param agent [String, nil] the agent the skill is for, e.g. `claude`
+        # @return [String] the skills directory that agent reads: `~/.claude/skills`
+        #   for Claude Code, and the shared `~/.agents/skills` for any other or none
+        def default_into(agent = nil) = File.join(Dir.home, AGENT_DIRS.fetch(agent.to_s, ".agents"), "skills")
       end
 
       # @return [String] the skills directory being installed into

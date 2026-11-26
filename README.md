@@ -37,6 +37,40 @@ alock version  # alock must be on PATH
 
 Or add `gem "agent-lock"` to a Gemfile.
 
+### From Ruby
+
+The same commands are methods on `Agent::Lock::Facade`, run in your process, so no Ruby process is started per call. Each returns the `Manager::Result` (`status`, `records`, `record`). Where the command would print a refusal, the method raises `Agent::Lock::Refused`: the message says who holds the scope, and `result` is the `Manager::Result` behind it. Releasing, breaking or resuming a free scope is not a refusal: it returns `:not_found`, although the command exits 1.
+
+```ruby
+require "agent/lock"
+
+locks = Agent::Lock.local # file store, built once per process
+locks.acquire("lib/billing/**", "rewriting the invoices", agent_id: "luke-backend")
+locks.note("lib/billing/**", "totals done, specs red", agent_id: "luke-backend")
+locks.check("lib/billing/tax.rb", agent_id: "luke-backend") # :mine
+locks.release_all(agent_id: "luke-backend")
+
+Agent::Lock.distributed # Redis only; raises RedisUnavailableError if it does not answer
+
+locks = Agent::Lock::Facade.new(
+  strategies: %w[redis file], # file is used when that Redis does not answer
+  redis_url: ENV.fetch("REDIS_URL", "redis://localhost:6379")
+)
+
+begin
+  locks.acquire("lib/billing/tax.rb", agent_id: "billing-b")
+rescue Agent::Lock::Refused => error
+  error.message                 # "REFUSED, do not write here\nHELD  lib/billing/**  by luke-backend ..."
+  error.result.record.agent_id
+end
+```
+
+`strategies` are tried in order. `filesystem` is another name for `file`. A list that is only `redis` raises `Agent::Lock::RedisUnavailableError` (a `RuntimeError`) at construction when that URL does not answer.
+
+A facade is frozen and builds a fresh `Manager` per call, so one instance can be shared by any number of threads. `Agent::Lock.local` and `Agent::Lock.distributed` are memoized separately, built once even when several threads ask at the same time, and a `distributed` that failed to connect is retried on the next call. `Facade.new` and `Agent::Lock.facade` each build a fresh facade and leave those two in place. Two facades pointed at two Redis URLs keep separate locks. The checkout's backend marker binds a facade as it binds `alock`: a facade claims a new checkout for its backend, and raises `Agent::Lock::Store::Mismatch` in one already claimed for the other, so a facade and the CLI never split one checkout across the file store and Redis. The marker names the backend, not the Redis URL: a facade given another `redis_url` than the CLI's `REDIS_URL` is still a separate locker.
+
+Every lock method takes `dir:`, `agent_id:`, `parent_id:` and `stale_minutes:`, overriding the facade's defaults for that call; any other keyword raises `ArgumentError`. `check`, `list`, `mine`, `release`, `release_all`, `resume`, `whoami`, `skills_path`, `skills_install` and `version` take the same arguments as the command. `break` is `break_lock` (it returns the result; the command succeeded). `acquire` takes `enforce:` and `allow_wide:`. `skills_install` takes `into:`, `agent:` (the `--for` flag) and `overwrite:`. `whoami` returns the `Identity` the lock would be signed with.
+
 ### Claim before you write
 
 ```bash
@@ -381,7 +415,7 @@ Either way, every claim checks for conflicts and writes its lock while holding o
 > [!CAUTION]
 > Picking a default from whether Redis happens to answer is still never a runtime auto-*switch*. If one agent found a running Redis and switched to it while the agent beside it did not, the two would take locks in different stores, see nothing of each other, and both report success — worse than no lock at all. The first store created in a tree records its backend in a marker file, and every later process in that tree is bound to it regardless of what Redis does next; a mismatch stops the run rather than silently picking the other one.
 >
-> That default is decided at the one moment two processes could otherwise race: both find a virgin tree, both probe Redis, and a flaky answer could hand them different defaults before either writes the marker. The marker is claimed atomically — the first `O_CREAT|O_EXCL` wins — and every process builds from whatever ends up on disk, never from its own guess, so a race can land on either backend but never on a split.
+> That default is decided at the one moment two processes could otherwise race: both find a virgin tree, both probe Redis, and a flaky answer could hand them different defaults before either writes the marker. The marker is claimed atomically — written to a temp file and hard-linked into place, so the first link wins and the marker never exists empty — and every process builds from whatever ends up on disk, never from its own guess, so a race can land on either backend but never on a split.
 
 The `redis` gem ships as a dependency of this one now, since deciding the default means probing for it. If you never want that probe, or never install a local Redis, set `AGENT_LOCK_BACKEND=file` yourself.
 

@@ -141,11 +141,23 @@ module Agent
       # @return [String] e.g. "claude-1f4c8a02"
       def fingerprint
         pid = session_pid
-        name = ProcessInfo.command(pid) || "agent"
+        name = label(ProcessInfo.command(pid))
         digest = Digest::SHA256.hexdigest(
           [pid, ProcessInfo.started_at(pid), Etc.getpwuid(::Process.uid)&.name, Socket.gethostname].join("|")
         )
         "#{name}-#{digest[0, 8]}"
+      end
+
+      # A process may retitle itself: on macOS `ps -o comm=` reports a Claude
+      # Code background job as `claude bg-spare`. A holder id with a space in
+      # it cannot be pasted back into a shell, so only the first word is kept,
+      # reduced to the characters an id may hold.
+      #
+      # @param command [String, nil] ProcessInfo.command
+      # @return [String] e.g. "claude", or "agent" when nothing usable is left
+      def label(command)
+        word = command.to_s.split.first.to_s.gsub(/[^\w.-]/, "")
+        word.empty? ? "agent" : word
       end
 
       # The first ancestor that is not a shell, which is the process that lasts

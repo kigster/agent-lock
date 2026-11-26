@@ -1,5 +1,20 @@
 # Changelog
 
+## [4.1.0] - 2026-11-25
+
+### Added
+
+- `Agent::Lock::Facade`: every command as a Ruby method, run in-process. `Agent::Lock.local` (file store), `Agent::Lock.distributed` (Redis, or `RedisUnavailableError`) and `Agent::Lock.facade` (Redis, else the file store). Thread-safe. See `README.md#from-ruby`.
+- `Agent::Lock::Refused` and `Agent::Lock::RedisUnavailableError`.
+
+### Fixed
+
+- The file store no longer raises `Errno::ENOENT` when several threads in one process rewrite the same lock (reaping, noting): each write gets its own temp file instead of one per process.
+- A facade is bound by the checkout's backend marker like `alock`: it claims a new checkout for its backend and raises `Store::Mismatch` in one claimed for the other, so a facade and the CLI never take one scope in two stores.
+- The backend marker is written to a temp file and hard-linked into place, so a process that loses the race for a new checkout never reads it empty. A marker that stays empty raises `Store::Mismatch` instead of letting each caller pick its own backend.
+- A facade's Redis client uses the gem's default timeouts; the 0.2s timeout applies only to the connection probe.
+- A fingerprint identity no longer contains spaces when the session's process has retitled itself (macOS reports a Claude Code background job as `claude bg-spare`). Only the first word is kept, so the holder id changes for such sessions.
+
 ## [4.0.0] - 2026-11-24
 
 ### Changed

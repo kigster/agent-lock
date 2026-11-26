@@ -23,10 +23,6 @@ module Agent
         # directory, so an agent learns how to claim files before it first
         # needs to.
         class SkillsInstall < Base
-          # The skills directory each `--for` agent reads. Anything not named
-          # here reads the shared `~/.agents/skills`.
-          AGENT_DIRS = { "claude" => ".claude" }.freeze
-
           desc "Copy the bundled skill (#{Skill.bundled.join(", ")}) into a skills directory"
 
           option :into, type: :string, default: nil,
@@ -70,7 +66,7 @@ module Agent
               return options[:into]
             end
 
-            File.join(Dir.home, AGENT_DIRS.fetch(options[:for], ".agents"), "skills")
+            Skill.default_into(options[:for])
           end
 
           # @param result [Skill::Result]

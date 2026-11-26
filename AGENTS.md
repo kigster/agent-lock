@@ -33,7 +33,7 @@ A `justfile` exists for the rest (`just lint`, `just test`, `just ci`, `just for
 
 If you add a spec that is inherently about one backend's own on-disk or on-Redis shape (not just the `Store` contract both satisfy), pin it to that backend explicitly regardless of `AGENT_LOCK_TEST_BACKEND` — see `manager_spec.rb`'s "the store the locks live in" block for the pattern.
 
-Redis-backed tests use a fixed test database (`RedisHelpers::TEST_REDIS_URL`, `spec/support/redis.rb`), never whatever `REDIS_URL` happens to be set to in the shell — a `flush_test_redis!` runs after every example. Do not make that depend on an ambient env var again; an unrelated project's `.envrc` exporting `REDIS_URL` is exactly the failure mode that guards against, and it has bitten this exact repo's own tooling (see the git log for "Never let ambient REDIS_URL decide what the suite flushes").
+Redis-backed tests use a fixed test database (`RedisHelpers::TEST_REDIS_URL`, `spec/support/redis.rb`), never whatever `REDIS_URL` happens to be set to in the shell — a `flush_test_redis!` runs after every example. `facade_redis_spec.rb` needs two separate lockers, so it also owns `RedisHelpers::SECOND_TEST_REDIS_URL` (database 14) and flushes that itself. Do not make that depend on an ambient env var again; an unrelated project's `.envrc` exporting `REDIS_URL` is exactly the failure mode that guards against, and it has bitten this exact repo's own tooling (see the git log for "Never let ambient REDIS_URL decide what the suite flushes").
 
 ## Naming: `FileSystemStore` / `RedisStore`, not `FileSystem` / `Redis`
 
@@ -41,7 +41,7 @@ The two backend classes are named with a `Store` suffix (`Agent::Lock::Store::Fi
 
 ## Backend selection is a security-relevant path
 
-`Store.for` decides a virgin tree's backend once and records it in a marker file; every later process in that tree is bound to it regardless of what Redis is doing. That marker is claimed atomically (`O_CREAT|O_EXCL`) so two processes racing to open the same virgin tree can't end up on different backends and silently stop seeing each other's locks — worse than no lock at all. See `lib/agent/lock/store.rb`'s moduledoc before changing anything in `.for`, `.claim`, or `.default_backend`.
+`Store.for` decides a virgin tree's backend once and records it in a marker file; every later process in that tree is bound to it regardless of what Redis is doing. That marker is claimed atomically (a temp file hard-linked into place, `O_CREAT|O_EXCL` where links are unsupported; an empty marker raises `Store::Mismatch`) so two processes racing to open the same virgin tree can't end up on different backends and silently stop seeing each other's locks — worse than no lock at all. See `lib/agent/lock/store.rb`'s moduledoc before changing anything in `.for`, `.claim`, or `.default_backend`.
 
 ## Known gaps 
 
