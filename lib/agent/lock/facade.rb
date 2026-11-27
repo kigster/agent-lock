@@ -256,6 +256,23 @@ module Agent
       # @return [String] {VERSION}
       def version = VERSION
 
+      # `alock show repos`. Redis only: the file store keeps one checkout's locks
+      # and has no list of repositories.
+      #
+      # @param redis_url [String, nil] that one Redis, with no fallback when given
+      # @return [Array<Store::RedisIndex::Repo>]
+      # @raise [Store::Unreachable] when Redis does not answer
+      def show_repos(redis_url: nil) = Store::RedisIndex.open(redis_url).repos
+
+      # `alock show repo owner/name`. Redis only, same as {#show_repos}.
+      #
+      # @param repo [String] `owner/name`, or `github.com/owner/name`
+      # @param redis_url [String, nil]
+      # @return [Array<Store::RedisIndex::Lock>]
+      # @raise [Error] when `repo` is not `owner/name`
+      # @raise [Store::Unreachable] when Redis does not answer
+      def show_repo(repo, redis_url: nil) = Store::RedisIndex.open(redis_url).locks(repo)
+
       private
 
       # Run the block of an {#acquire} that took the lock, then release it.

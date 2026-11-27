@@ -128,7 +128,7 @@ RSpec.describe Agent::Lock::CLI::Commands::TreeCommand do
         aggregate_failures do
           expect(command.output).to include("ACQUIRED workflow/**")
           expect(File.read(marker).strip).to eq("redis")
-          expect(Redis.new(url: url).keys("agent-lock:*").size).to eq(1)
+          expect(Redis.new(url: url).keys("[[]alock-*").size).to eq(1)
         end
       end
 
@@ -139,7 +139,7 @@ RSpec.describe Agent::Lock::CLI::Commands::TreeCommand do
           expect(agent_lock("list -u #{url}").output).to include("workflow/**")
           expect(agent_lock("note workflow halfway -u #{url}")).to have_exit_status(0)
           expect(agent_lock("release workflow -u #{url}")).to have_exit_status(0)
-          expect(Redis.new(url: url).keys("agent-lock:*")).to be_empty
+          expect(Redis.new(url: url).keys("[[]alock-*")).to be_empty
         end
       end
 

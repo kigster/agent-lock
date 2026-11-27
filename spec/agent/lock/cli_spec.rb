@@ -496,7 +496,7 @@ RSpec.describe Agent::Lock::CLI do
       end
     end
 
-    ["version", "whoami", "skills path", "skills install"].each do |verb|
+    ["version", "whoami", "skills path", "skills install", "show repos", "show repo"].each do |verb|
       it "is not offered by #{verb}, which never reads a checkout" do
         expect(agent_lock("#{verb} --help").output).not_to include("--dir")
       end

@@ -110,7 +110,7 @@ RSpec.describe Agent::Lock::Store::RedisStore, type: :checkout do
 
       aggregate_failures do
         expect(seen).to eq(exists: true, scopes: ["workflow/**"])
-        expect(redis.scan_each(match: "#{store.key_for("")}*").to_a).not_to include(store.mutex_key)
+        expect(redis.scan_each(match: store.send(:scan_match)).to_a).not_to include(store.mutex_key)
       end
     end
 

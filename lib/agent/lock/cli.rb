@@ -110,6 +110,7 @@ require_relative "cli/commands/acquire"
 require_relative "cli/commands/release"
 require_relative "cli/commands/check"
 require_relative "cli/commands/list"
+require_relative "cli/commands/show"
 require_relative "cli/commands/mine"
 require_relative "cli/commands/release_all"
 require_relative "cli/commands/break"
@@ -132,6 +133,8 @@ module Agent
         "release" => [Commands::Release, []],
         "check" => [Commands::Check, []],
         "list" => [Commands::List, ["ls"]],
+        "show repos" => [Commands::ShowRepos, []],
+        "show repo" => [Commands::ShowRepo, []],
         "mine" => [Commands::Mine, []],
         "release-all" => [Commands::ReleaseAll, []],
         "break" => [Commands::Break, []],

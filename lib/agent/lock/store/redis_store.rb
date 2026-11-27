@@ -23,10 +23,6 @@ module Agent
       # REDIS_URL, or failing that on the local default. See Store's moduledoc
       # for how that default is decided.
       class RedisStore
-        # The prefix of every key: `agent-lock:<repo digest>:<id>` for locks,
-        # `agent-lock-mutex:<repo digest>` for the mutex.
-        NAMESPACE = "agent-lock"
-
         # Tried after REDIS_URL, or alone when it is unset.
         LOCAL_URL = "redis://127.0.0.1:6379/0"
 
@@ -84,7 +80,7 @@ module Agent
         #
         # @return [Array<Record>]
         def all
-          keys = client.scan_each(match: "#{namespace}:*").to_a.uniq.sort
+          keys = client.scan_each(match: scan_match).to_a.uniq.sort
           keys.filter_map { |key| parse(client.get(key), key) }
         end
 
@@ -120,11 +116,14 @@ module Agent
           outcome
         end
 
-        # Outside the namespace on purpose. `all` scans `<namespace>:*`, and a
-        # mutex inside it would be read back as a lock on every scan.
+        # One per repository, shared by every branch. A checkout that switched
+        # branches still writes the lock it took on the old one, and that write
+        # has to shut out whoever is on the branch it left. `all` scans
+        # `<label>-<hex>*`, so the mutex sits beside that pattern rather than
+        # inside it, or every scan would read the mutex back as a lock.
         #
         # @return [String]
-        def mutex_key = "#{NAMESPACE}-mutex:#{digest}"
+        def mutex_key = "#{label}-mutex"
 
         # @param scope [Scope]
         # @return [Record, nil]
@@ -139,38 +138,70 @@ module Agent
         def create(record)
           args = { nx: true }
           args[:ex] = ttl_seconds if ttl_seconds.positive?
-          !!client.set(key_for(record.id), record.to_markdown, **args)
+          !!client.set(key_for(record.id, record.lock_key), record.to_markdown, **args)
         end
 
         # @param record [Record]
         # @return [void]
-        def update(record) = client.set(key_for(record.id), record.to_markdown, keepttl: true)
+        def update(record) = client.set(key_for(record.id, record.lock_key), record.to_markdown, keepttl: true)
 
         # @param record [Record]
         # @return [void]
-        def delete(record) = client.del(key_for(record.id))
+        def delete(record) = client.del(key_for(record.id, record.lock_key))
 
+        # The branch the id was taken on decides the key, not the branch this
+        # checkout is on now. A session that switched branches after claiming
+        # still has to release the record it wrote, and that record's lock key
+        # names the branch it was taken on.
+        #
         # @param id [String]
+        # @param lock_key [String] {Tree#lock_key} for the checkout that owns the id
         # @return [String]
-        def key_for(id) = "#{namespace}:#{id}"
+        def key_for(id, lock_key = tree.lock_key) = "#{namespace_for(lock_key)}:#{id}"
+
+        # Where this checkout writes. Every branch of the repository has its
+        # own, under one readable label, and {#all} reads them all.
+        #
+        # @return [String] `[alock-<major>.<minor>-<owner>/<repo>]-<sha256>`
+        def namespace = namespace_for(tree.lock_key)
 
         private
 
-        # Keyed by the repository, not the checkout, so that every checkout of
-        # it, on every machine sharing this Redis, reads the same locks. It
-        # used to be the absolute path, which kept two machines apart even when
-        # they were editing the same file. Which of those locks actually
-        # collide is decided by Record#about?, not here.
+        # `[alock-4.0-kigster/laser-cutter]`. The brackets are literal, so a
+        # person reading `KEYS` can see the gem and the repository. Major and
+        # minor only: a patch keeps the keys it wrote, a minor starts a new
+        # set. GitHub is `owner/repo`; any other host keeps its host, so two
+        # forges with the same owner and name do not share a label.
         #
-        # @return [String] the key prefix every lock in this repository shares
-        def namespace = "#{NAMESPACE}:#{digest}"
+        # @return [String]
+        def label = "[alock-#{self.class.version_tag}-#{tree.redis_slug}]"
+
+        # The label, then the SHA-256 of the lock key. On a branch the lock
+        # key is `repository@branch`, which every worktree and every machine
+        # on that branch computes the same way, so they share the key. The
+        # checkout's path stays out of it: hashing the path is what used to
+        # keep two machines from seeing each other. A detached HEAD has no
+        # branch, and its lock key is `host:worktree-path`, so that worktree
+        # hashes alone.
+        #
+        # @param lock_key [String]
+        # @return [String]
+        def namespace_for(lock_key) = "#{label}-#{::Digest::SHA256.hexdigest(lock_key)}"
+
+        # `all` has to see every branch, so it matches the label and any hex
+        # digest rather than this checkout's own. Redis SCAN treats `[]` as a
+        # character class. The label starts and ends with brackets, and an
+        # unescaped pattern matches one character instead of the key, which
+        # lists nothing and lets every claim through. `[[]` is one literal `[`.
+        # The mutex ends in `-mutex`, and `m` is outside `[0-9a-f]`, so the
+        # scan does not return it.
+        #
+        # @return [String]
+        def scan_match = "#{label.sub("[", "[[]")}-[0-9a-f]*"
 
         # @return [String] the URL this store was given, or the one
         #   {.create_client} settled on when it was not
         def url = @url || self.class.url
-
-        # @return [String] the first 12 hex digits of the repository's SHA-256
-        def digest = ::Digest::SHA256.hexdigest(tree.repo)[0, 12]
 
         # SET NX PX until it takes, backing off with jitter so that processes
         # which all lost the same round do not all come back for the next one
@@ -259,12 +290,34 @@ module Agent
                                       "#{reason(error)}"
           end
 
+          # A client for a command that reads every repository in one Redis,
+          # rather than the locks of one checkout. An explicit URL is tried
+          # alone. Without one, {.create_client} searches as usual.
+          #
+          # @param url [String, nil]
+          # @return [::Redis]
+          # @raise [Store::Unreachable] when it does not answer
+          def open(url = nil)
+            client, error = url ? connect(url) : create_client
+            return client if client
+
+            where = url ? safe(url) : candidate_urls.map { |candidate| safe(candidate) }.join(" or ")
+            raise Store::Unreachable, "cannot use Redis at #{where}: #{reason(error)}"
+          end
+
           # A URL fit to print: an error lands in transcripts and logs, and
           # a Redis URL may carry a password.
           #
           # @param url [String]
           # @return [String] `url` with any userinfo replaced by `***`
           def safe(url) = url.to_s.gsub(%r{(?<=://)[^/@\s]*@}, "***@")
+
+          # @return [String] `4.0` from `4.0.3`. A patch stays in the namespace
+          #   it wrote; a new minor starts another one.
+          def version_tag
+            major, minor, = ::Agent::Lock::VERSION.split(".")
+            "#{major}.#{minor}"
+          end
 
           # redis-rb words its own errors without the password; anything
           # else (a URL that does not parse) may quote the URL back.
