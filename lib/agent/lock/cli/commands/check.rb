@@ -18,10 +18,10 @@ module Agent
           example ["lib/billing/tax.rb", "'lib/**' --json"]
 
           # @param scope [String]
-          # @param options [Hash] `:dir`, `:json`
+          # @param options [Hash] `:dir`, `:locking_strategy`, `:redis_url`, `:json`
           # @return [Manager::Result] :free, :mine or :held
           def call(scope:, **options)
-            manager = manager(options[:dir])
+            manager = manager(options)
             result = manager.check(scope)
             report(result, scope, json: options[:json], stale_minutes: manager.stale_minutes)
             finish(result)

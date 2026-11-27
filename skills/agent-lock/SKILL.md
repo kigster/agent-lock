@@ -3,7 +3,7 @@ name: agent-lock
 description: Use when several agents or sub-agents write in one checkout or worktree, before creating or editing files there, when launching sub-agents that will write files, or when `alock` or `agent-lock` answers REFUSED, HELD, STALE or INTERRUPTED WORK.
 ---
 
-# Claiming files with alo
+# Claiming files with alock
 
 ## Overview
 
@@ -15,6 +15,22 @@ description: Use when several agents or sub-agents write in one checkout or work
 1. **Two siblings with one name are one holder**, and never block each other. Use the name your orchestrator gave you. Given none, pick the task plus four random characters once, such as `shipping-rates-7f3a`, and type that literal on every call; `$RANDOM` in the prefix changes each time.
 1. **A lock in another checkout guards nothing here.** Run `alock` inside the checkout you write in: `cd <checkout> && AGENT_ID=<your-name> alock ...`, or pass `--dir <checkout>`.
 1. **An orchestrator's lock does not keep siblings apart.** It keeps other sessions out. Each sub-agent still claims its own files inside it.
+
+## Which store the locks live in
+
+Left alone, `alock` uses Redis when one answers and the file store inside `.git` otherwise, and the first call in a checkout records that choice. The caller can choose instead, and should whenever somebody else chose first:
+
+- **You were given a strategy or a Redis URL** (by your orchestrator, a dispatcher, or your instructions): pass it on every `alock` call that reads or writes locks (`acquire`, `release`, `release-all`, `check`, `list`, `mine`, `note`, `resume`, `break`), not only `acquire`. `whoami` and `version` take neither flag. `-s redis` or `-s filesystem` names the store; `-u <url>` names the one Redis to use and implies `-s redis`.
+- **`AGENT_LOCK_REDIS_URL` is already set in your environment:** it means the same as `-u` on every call, so pass no flag and do not unset or change it.
+- **You launch sub-agents** and you passed either flag yourself: give each sub-agent the same flags with its name. A different Redis URL is a different store, where nobody sees your locks.
+- **You were given neither:** pass neither.
+
+```bash
+cd ~/src/shop && AGENT_ID=shipping-rates-7f3a alock acquire "src/shipping/**" "rate tables" -u redis://locks.internal:6379
+cd ~/src/shop && AGENT_ID=shipping-rates-7f3a alock release "src/shipping/**" -u redis://locks.internal:6379
+```
+
+Exit 2 naming the store means the flags disagree with the checkout or the Redis did not answer. Do not drop the flag to get past it: that puts your lock where nobody else is looking. Report it.
 
 ## Recipe
 
@@ -44,7 +60,7 @@ Write only inside what you claimed, and claim the narrowest scope that covers it
 | `REFUSED: ... your parent's whole claim` | 1    | Claim something narrower inside it                                                  |
 | `HELD ... STALE`                         | 1    | The holder is alive but quiet. Ask, or announce, then `alock break`                   |
 | `INTERRUPTED WORK`                       | 1    | `alock resume` takes it over with its notes; `alock break` discards it                  |
-| `alo: ...`                               | 2    | The command could not run: empty scope, a path outside the tree, a backend mismatch |
+| `ERROR: alock: ...`                      | 2    | The command could not run: empty scope, a path outside the tree, a store mismatch, a Redis that did not answer |
 
 ## Common mistakes
 

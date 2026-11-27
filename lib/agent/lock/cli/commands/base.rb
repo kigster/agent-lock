@@ -47,10 +47,6 @@ module Agent
           # @return [String]
           def program = launcher.program
 
-          # @param dir [String, nil] the `--dir` option; nil means the current directory
-          # @return [Manager] bound to the tree that contains `dir`
-          def manager(dir) = Manager.new(tree: Tree.for(dir || "."))
-
           # @param text [String] one line of the deliverable
           # @return [void]
           def say(text) = stdout.puts(text)

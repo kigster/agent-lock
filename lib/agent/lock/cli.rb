@@ -58,8 +58,9 @@ module Agent
 
         Backends: Redis when one answers on env REDIS_URL (shared across machines),
         or localhost:6379 (local only). Otherwise a file store inside .git (also
-        local only). The first process in a checkout records the choice; setting environment
-        variable #{COLORS.blue("AGENT_LOCK_BACKEND=redis|file")} overrides it.
+        local only). The first process in a checkout records the choice. To choose it yourself,
+        pass #{COLORS.blue("--locking-strategy redis|filesystem")} (#{COLORS.blue("--redis-url URL")} names the one Redis
+        to use), or set #{COLORS.blue("AGENT_LOCK_BACKEND=redis|file")}.
 
         Exit codes: 0 done, 1 refused or held by someone else, 2 could not run.
 

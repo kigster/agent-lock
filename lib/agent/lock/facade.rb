@@ -62,12 +62,23 @@ module Agent
       # Tried in this order when the caller does not pass `strategies`.
       DEFAULT_STRATEGIES = %w[redis file].freeze
 
-      # Used when `redis_url` is omitted and `REDIS_URL` is unset.
+      # Used when `redis_url` is omitted and neither `AGENT_LOCK_REDIS_URL`
+      # nor `REDIS_URL` is set.
       DEFAULT_REDIS_URL = "redis://localhost:6379"
+
+      # The Redis a facade uses, by the rule `alock` follows: what the
+      # caller named, then `AGENT_LOCK_REDIS_URL`, then `REDIS_URL`.
+      #
+      # @param redis_url [String, nil] the caller's
+      # @return [String]
+      def self.redis_url(redis_url = nil)
+        redis_url || Store.named_redis_url || ENV.fetch("REDIS_URL", DEFAULT_REDIS_URL)
+      end
 
       # @param strategies [Array<String, Symbol>] backends to try, in order:
       #   `redis`, and `file` (or `filesystem`)
-      # @param redis_url [String, nil] defaults to `REDIS_URL`, then {DEFAULT_REDIS_URL}
+      # @param redis_url [String, nil] defaults as {.redis_url} says:
+      #   `AGENT_LOCK_REDIS_URL`, then `REDIS_URL`, then {DEFAULT_REDIS_URL}
       # @param async [Boolean] offer {#async}; needs the concurrent-ruby gem
       # @param defaults [Hash] what a call uses when it does not say:
       # @option defaults [String] :agent_id signs locks when a call does not name its own
@@ -86,7 +97,7 @@ module Agent
       #   beside `session_name`, or a default is not one of those five
       # @raise [LoadError] when `async` is true and concurrent-ruby is not installed
       def initialize(strategies: DEFAULT_STRATEGIES, redis_url: nil, async: false, **defaults)
-        @backend = Backend.new(strategies:, redis_url: redis_url || ENV.fetch("REDIS_URL", DEFAULT_REDIS_URL))
+        @backend = Backend.new(strategies:, redis_url: Facade.redis_url(redis_url))
         @session = Session.new(@backend, **defaults)
         @async = async ? Async.tap(&:load!).new(self) : nil
         freeze
@@ -268,8 +279,10 @@ module Agent
 
     # Built on first use, once per process; see {.local} and {.distributed}.
     LOCAL_FACADE = Facade::Memo.new { Facade.new(strategies: %w[file]) }
-    DISTRIBUTED_FACADE = Facade::Memo.new { Facade.new(strategies: %w[redis]) }
-    private_constant :LOCAL_FACADE, :DISTRIBUTED_FACADE
+    # One per Redis URL, each built once.
+    DISTRIBUTED_FACADES = Facade::Memo.new { {} }
+    DISTRIBUTED_MUTEX = Mutex.new
+    private_constant :LOCAL_FACADE, :DISTRIBUTED_FACADES, :DISTRIBUTED_MUTEX
 
     class << self
       # The process-wide file-store facade, built on first use. Thread-safe,
@@ -278,13 +291,21 @@ module Agent
       # @return [Facade]
       def local = LOCAL_FACADE.value
 
-      # The process-wide Redis facade, built on first use from `REDIS_URL`
-      # (or {Facade::DEFAULT_REDIS_URL}). Thread-safe. A failed build is not
-      # kept: the next call tries Redis again.
+      # The process-wide Redis facade for one Redis, built on first use and
+      # kept per URL, so a host whose Redis comes from its own flag or
+      # config file gets the same locker on every call. Thread-safe. A
+      # failed build is not kept: the next call tries Redis again.
       #
+      # @param redis_url [String, nil] nil resolves as {Facade.redis_url}
+      #   says: `AGENT_LOCK_REDIS_URL`, then `REDIS_URL`, then the default
       # @return [Facade]
       # @raise [RedisUnavailableError] when that Redis does not answer
-      def distributed = DISTRIBUTED_FACADE.value
+      def distributed(redis_url: nil)
+        url = Facade.redis_url(redis_url)
+        DISTRIBUTED_MUTEX.synchronize do
+          DISTRIBUTED_FACADES.value[url] ||= Facade.new(strategies: %w[redis], redis_url: url)
+        end
+      end
 
       # A new facade, defaulting like `alock`: Redis when it answers, the
       # file store when it does not. Never memoized.
@@ -300,12 +321,13 @@ module Agent
       end
 
       # Forget {.local} and {.distributed}, so the next call builds each anew.
-      # For tests, and for a process whose `REDIS_URL` changed.
+      # For tests. A process whose `REDIS_URL` changed needs no reset: the
+      # new URL is a new facade.
       #
       # @return [void]
       def reset_facades!
         LOCAL_FACADE.reset
-        DISTRIBUTED_FACADE.reset
+        DISTRIBUTED_FACADES.reset
       end
     end
   end

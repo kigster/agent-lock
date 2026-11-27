@@ -11,7 +11,10 @@ module Agent
   module Lock
     # Where locks are kept. One tree, one store, chosen on purpose.
     #
-    # AGENT_LOCK_BACKEND wins when set. Otherwise a tree that already has a
+    # A caller that names a backend (`alock --locking-strategy`) wins, then
+    # AGENT_LOCK_BACKEND when set. A caller that names the Redis itself
+    # (`alock --redis-url`, or AGENT_LOCK_REDIS_URL) has asked for Redis,
+    # and for that one alone: no REDIS_URL, no local default. Otherwise a tree that already has a
     # marker keeps using it. A virgin tree defaults to Redis when one answers
     # on REDIS_URL or, failing that, on the local default; file when neither
     # does.
@@ -33,37 +36,103 @@ module Agent
       # The file in a tree's store directory that records its backend.
       MARKER = "backend"
 
+      # The environment's `--redis-url`: the one Redis to use, set by a
+      # dispatcher for the agents it starts. Its own name, because
+      # `REDIS_URL` may belong to the project the agent is working on.
+      REDIS_URL_ENV = "AGENT_LOCK_REDIS_URL"
+
       # Raised when a process asks for a backend other than the one the tree
       # already uses, or for one that does not exist.
       class Mismatch < Error; end
 
+      # Raised when the caller named the Redis to use and it did not answer.
+      # Falling back to another one would put this process in a store the
+      # caller's other agents are not reading.
+      class Unreachable < Error; end
+
       module_function
 
       # @param tree [Tree]
+      # @param backend [String, nil] "file" or "redis", named by the caller;
+      #   nil leaves it to AGENT_LOCK_BACKEND, the marker and the default
+      # @param redis_url [String, nil] the one Redis to use, with no search
+      #   and no fallback; nil reads {REDIS_URL_ENV}, and without that
+      #   searches as {RedisStore.candidate_urls} says
       # @return [Store::FileSystemStore, Store::RedisStore]
-      def for(tree)
-        requested = ENV["AGENT_LOCK_BACKEND"]&.downcase
+      # @raise [Mismatch] when the tree's locks live in the other backend,
+      #   or a Redis is named beside the file backend
+      # @raise [Unreachable] when the named Redis does not answer
+      def for(tree, backend: nil, redis_url: nil)
+        url = redis_url || named_redis_url
+        requested = requested_backend(backend, redis_url, url)
         established = recorded(tree)
+        return build(agreed(established, requested), tree, redis_url: url) if established
 
-        if established
-          if requested && requested != established
-            raise Mismatch, "this tree's locks live in #{established}, not #{requested}, " \
-                            "release them before switching backends"
-          end
+        establish(tree, requested, url)
+      end
 
-          return build(established, tree)
-        end
+      # @return [String, nil] {REDIS_URL_ENV}, when it is set to something
+      def named_redis_url
+        url = ENV.fetch(REDIS_URL_ENV, "").strip
+        url.empty? ? nil : url
+      end
 
-        build(claim(tree, requested || default_backend), tree)
+      # A backend the caller passed wins over a URL the caller passed, which
+      # wins over the environment. A Redis named beside the file backend is
+      # refused, never quietly dropped: one of the two is a mistake, and
+      # guessing which puts this process in a store nobody else reads.
+      #
+      # @param backend [String, nil] the caller's
+      # @param redis_url [String, nil] the caller's
+      # @param url [String, nil] the Redis named by the caller or the environment
+      # @return [String, nil] "file", "redis", or nil for the tree's own choice
+      # @raise [Mismatch]
+      def requested_backend(backend, redis_url, url)
+        requested = (backend || ("redis" if redis_url) || ENV.fetch("AGENT_LOCK_BACKEND", nil))&.downcase
+        return requested unless url
+        return "redis" unless requested == "file"
+
+        raise Mismatch, "a Redis URL (#{RedisStore.safe(url)}) does not go with the file backend"
+      end
+
+      # @param established [String] the backend the tree's marker records
+      # @param requested [String, nil] the backend this process asked for
+      # @return [String] `established`
+      # @raise [Mismatch] when they differ
+      def agreed(established, requested)
+        return established if requested.nil? || requested == established
+
+        raise Mismatch, "this tree's locks live in #{established}, not #{requested}, " \
+                        "release them before switching backends"
+      end
+
+      # Claims a virgin tree. A Redis that was asked for is connected to
+      # before the marker is written: a tree bound to a Redis that never
+      # answered would refuse every later command. What `claim` hands back
+      # is checked too, since another process may have claimed the tree for
+      # the other backend in between.
+      #
+      # @param tree [Tree]
+      # @param requested [String, nil]
+      # @param redis_url [String, nil]
+      # @return [Store::FileSystemStore, Store::RedisStore]
+      # @raise [Unreachable] when Redis was asked for and does not answer
+      # @raise [Mismatch] when another process claimed the tree for the other backend
+      def establish(tree, requested, redis_url)
+        store = build("redis", tree, redis_url:) if requested == "redis"
+        claimed = agreed(claim(tree, requested || default_backend), requested)
+        store || build(claimed, tree, redis_url:)
       end
 
       # @param name [String] "file" or "redis"
       # @param tree [Tree]
+      # @param redis_url [String, nil] see {.for}
       # @return [Store::FileSystemStore, Store::RedisStore]
       # @raise [Mismatch] for any other name
-      def build(name, tree)
+      # @raise [Unreachable] when `redis_url` does not answer
+      def build(name, tree, redis_url: nil)
         case name
-        when "redis" then RedisStore.new(tree)
+        when "redis" then redis_url ? RedisStore.at(tree, redis_url) : RedisStore.found(tree)
         when "file" then FileSystemStore.new(tree)
         else raise Mismatch, "unknown backend #{name.inspect}, expected file or redis"
         end

@@ -26,10 +26,10 @@ module Agent
 
           # @param scope [String] as typed: a path, a directory or a glob
           # @param intent [String, nil] what the holder is about to do
-          # @param options [Hash] `:dir`, `:enforce`, `:allow_wide`
+          # @param options [Hash] `:dir`, `:locking_strategy`, `:redis_url`, `:enforce`, `:allow_wide`
           # @return [Manager::Result]
           def call(scope:, intent: nil, **options)
-            manager = manager(options[:dir])
+            manager = manager(options)
             result = manager.acquire(
               scope, intent: intent || "unspecified",
                      enforce: options[:enforce], wide: options[:allow_wide]

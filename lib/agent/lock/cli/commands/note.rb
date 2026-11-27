@@ -21,10 +21,10 @@ module Agent
 
           # @param scope [String]
           # @param text [String]
-          # @param options [Hash] `:dir`
+          # @param options [Hash] `:dir`, `:locking_strategy`, `:redis_url`
           # @return [Manager::Result] :noted, :not_found or :refused
           def call(scope:, text:, **options)
-            result = manager(options[:dir]).note(scope, text)
+            result = manager(options).note(scope, text)
 
             case result.status
             when :noted then say("NOTED #{result.record.scope}")

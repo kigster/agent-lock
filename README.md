@@ -153,7 +153,7 @@ The same commands that are available when you run `alock -h` become methods on a
 There are three types of Ruby API locks you can use, and each is an instance of the class `Agent::Lock::Facade`:
 
 1. A default version of a local file-system based lock that works great for a single repository work on multiple agents on a single machine. It can be lazy loaded by calling `Agent::Lock.local`
-2. A default version of a distributed lock can be obtained by calling `Agent::Lock.distributed`. It lazily builds a Redis-backed locker from `$REDIS_URL` (default `redis://localhost:6379`), and raises `Agent::Lock::RedisUnavailableError` when that Redis does not answer.
+2. A default version of a distributed lock can be obtained by calling `Agent::Lock.distributed`. It lazily builds a Redis-backed locker, one per URL, from `redis_url:` when given (`Agent::Lock.distributed(redis_url: url)`), else `$AGENT_LOCK_REDIS_URL`, else `$REDIS_URL` (default `redis://localhost:6379`), and raises `Agent::Lock::RedisUnavailableError` when that Redis does not answer.
 3. And of course you can create any number of `Agent::Lock::Facade` instances by calling its constructor: `@locker = Agent::Lock::Facade.new(*args, **opts)` (see examples below).
 
 #### Examples
@@ -396,6 +396,8 @@ Flags:
 | Flag           | Where                                                              | Does                                                       |
 | :------------- | :----------------------------------------------------------------- | :--------------------------------------------------------- |
 | `--dir PATH`   | every command that reads locks (not `whoami`, `skills`, `version`) | Act on the checkout that contains `PATH`                   |
+| `-s`, `--locking-strategy redis\|filesystem` | the same commands | Use that store, instead of `AGENT_LOCK_BACKEND` or whichever answers first |
+| `-u`, `--redis-url URL` | the same commands | Use that one Redis, with no fallback. Implies `--locking-strategy redis` |
 | `--json`       | `check`, `list`, `mine`, `whoami`                                  | Machine-readable output                                    |
 | `--enforce`    | `acquire`                                                          | Also freeze the matched files (macOS)                      |
 | `--allow-wide` | `acquire`                                                          | Let `--enforce` freeze more than 500 files                 |
@@ -426,6 +428,7 @@ Names every command and flag `alock` currently knows, since the script is genera
 | `AGENT_LOCK_BACKEND`       | `redis` if one answers, else `file`     | `file` or `redis`                                                        |
 | `AGENT_LOCK_TTL_SECONDS`   | `0`                                     | Redis expiry. `0` means no TTL                                           |
 | `REDIS_URL`                | unset                                   | A shared Redis, tried before `redis://127.0.0.1:6379/0`                  |
+| `AGENT_LOCK_REDIS_URL`     | unset                                   | The one Redis to use, with no fallback: `--redis-url` for every call     |
 
 ## Backends
 
@@ -437,6 +440,22 @@ The search for a Redis runs in a fixed order: `REDIS_URL` first, when it is set,
 AGENT_LOCK_BACKEND=redis alock acquire workflow/**   # force it, rather than autodetect
 AGENT_LOCK_BACKEND=file  alock acquire workflow/**   # or force the file store instead
 ```
+
+The same choice can be made per call, which is how an agent started by a dispatcher lands in the dispatcher's store whatever its own shell exports:
+
+```bash
+alock acquire workflow/** --locking-strategy filesystem            # -s for short; file is another name for it
+alock acquire workflow/** --locking-strategy redis                 # Redis or fail: REDIS_URL, then the local default
+alock acquire workflow/** --redis-url redis://locks.internal:6379  # -u for short: this Redis and no other
+alock release workflow/** --redis-url redis://locks.internal:6379  # every later call names it too
+```
+
+- A flag wins over `AGENT_LOCK_BACKEND`. Neither wins over the tree's marker: naming the store the tree does not use exits 2.
+- `--redis-url` has no fallback. If nothing answers there, or it is empty or not a Redis URL, the command exits 2 and a virgin tree is left unclaimed. A password in it is never printed back.
+- `AGENT_LOCK_REDIS_URL` means the same as `--redis-url` on every call, and the flag wins over it. It is the form for a dispatcher: exported to the agents it starts, it reaches their sub-agents and every fresh shell, keeps a URL with a password out of prompts and transcripts, and leaves `REDIS_URL` to the project being worked on. The Ruby facade reads it before `REDIS_URL` too.
+- The marker records `redis`, not which Redis. Every agent in the tree has to be given the same URL, by the flag or by `REDIS_URL`; two URLs are two stores that cannot see each other's locks.
+- A Redis URL, from the flag or the variable, beside the file store (`--locking-strategy filesystem` or `AGENT_LOCK_BACKEND=file`) exits 2.
+- `--locking-strategy redis` with no URL is Redis or fail as well: if neither `REDIS_URL` nor the local default answers, it exits 2 without claiming the tree.
 
 ### One repository, many machines
 
