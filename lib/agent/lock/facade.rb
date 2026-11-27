@@ -33,7 +33,7 @@ module Agent
     #
     # - `dir:` [String] a directory inside the checkout (default: the current one)
     # - `agent_id:` [String] who holds the lock
-    # - `parent_id:` [String] that holder's parent session
+    # - `parent_id:` [String, false] that holder's parent session; `false` for none
     # - `stale_minutes:` [Integer] when an unverifiable lock counts as stale
     # - `session_name:` [String] the session's name, tied to no process
     #
@@ -82,7 +82,10 @@ module Agent
       # @param async [Boolean] offer {#async}; needs the concurrent-ruby gem
       # @param defaults [Hash] what a call uses when it does not say:
       # @option defaults [String] :agent_id signs locks when a call does not name its own
-      # @option defaults [String] :parent_id that holder's parent, likewise
+      # @option defaults [String, false] :parent_id that holder's parent,
+      #   likewise. `false` says it has none: a top-level service that
+      #   names itself is otherwise the child of whatever started it, and
+      #   is not blocked by that session's locks
       # @option defaults [Integer] :stale_minutes nil reads `AGENT_LOCK_STALE_MINUTES`
       # @option defaults [Symbol] :holder `:process` (default) ties a lock's
       #   liveness to this Ruby process, so locks left by a crashed host are

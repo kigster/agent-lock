@@ -89,11 +89,16 @@ module Agent
       # would answer to without it, the session is, by elimination, the
       # parent.
       #
+      # A holder can also say it has none: AGENT_PARENT_ID set, and empty. A
+      # top-level service that names itself is otherwise taken for a child of
+      # whatever terminal or agent started it, and a lock that session holds
+      # would not block it.
+      #
       # @return [String, nil]
       def parent_id
         return @parent_id if defined?(@parent_id)
 
-        @parent_id = declared_parent || inferred_parent
+        @parent_id = parentless? ? nil : declared_parent || inferred_parent
       end
 
       # Where #id came from, so a session can check what it is being taken for
@@ -110,8 +115,14 @@ module Agent
       # Where #parent_id came from. An inferred parent is a guess a human may
       # want to overrule with AGENT_PARENT_ID, so it is reported as one.
       #
-      # @return [Symbol, nil] :explicit, :inferred, or nil when there is no parent
+      # A parent declared absent is told apart from one there was nothing to
+      # infer: an AGENT_PARENT_ID exported empty by accident looks the same
+      # in a lock record, and this is where it can be seen.
+      #
+      # @return [Symbol, nil] :explicit, :inferred, :none when the holder
+      #   said it has no parent, or nil when there is none to infer
       def parent_source
+        return :none if parentless?
         return :explicit if declared_parent
 
         :inferred if parent_id
@@ -134,6 +145,10 @@ module Agent
 
       # @return [String, nil] AGENT_PARENT_ID, when set to something
       def declared_parent = presence(@env["AGENT_PARENT_ID"])
+
+      # @return [Boolean] whether AGENT_PARENT_ID is set and names nobody,
+      #   which says "no parent" where unset says "work it out"
+      def parentless? = @env.key?("AGENT_PARENT_ID") && declared_parent.nil?
 
       # What this session answers to when nobody names it, which is the
       # orchestrator's id. The session id counts as well as the fingerprint:

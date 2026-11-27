@@ -32,6 +32,19 @@ RSpec.describe Agent::Lock::CLI do
   end
 
   describe "acquire" do
+    # A service that names itself is otherwise taken for a child of the
+    # session that started it, which that session's lock would not block.
+    it "refuses a holder with an empty AGENT_PARENT_ID the scope its own session holds" do
+      set_environment_variable("CLAUDE_SESSION_ID", "01Tms9skZQfGQs4y")
+      delete_environment_variable("AGENT_ID")
+      agent_lock("acquire workflow 'rewriting the installer'")
+      set_environment_variable("AGENT_ID", "svc")
+      inferred = agent_lock("acquire workflow/lib/a.rb")
+      set_environment_variable("AGENT_PARENT_ID", "")
+
+      expect([inferred.exit_status, agent_lock("acquire workflow/lib/cli.rb").exit_status]).to eq([0, 1])
+    end
+
     it "claims a scope and exits 0" do
       command = agent_lock("acquire workflow 'rewriting the installer'")
 
@@ -85,6 +98,14 @@ RSpec.describe Agent::Lock::CLI do
     end
 
     let(:session_id) { Agent::Lock::Identity.new(env: {}).id }
+
+    it "takes an empty AGENT_PARENT_ID for no parent at all" do
+      set_environment_variable("AGENT_ID", "svc")
+      set_environment_variable("AGENT_PARENT_ID", "")
+
+      expect(agent_lock("whoami").stdout).to match(/^parent: none  \(AGENT_PARENT_ID is set and empty\)$/)
+      expect(JSON.parse(agent_lock("whoami --json").stdout)).to include("parent_id" => nil, "parent_source" => "none")
+    end
 
     it "says who this is, who its parent is, and where each came from" do
       set_environment_variable("AGENT_ID", "kid-agent")
