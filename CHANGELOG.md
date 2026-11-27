@@ -28,6 +28,7 @@
 
 - Concurrent `note` calls on one lock no longer lose notes: `note`, `release`, `break`, `release-all`, `Manager#reap` and the reaping before `check`, `list` and `mine` now run inside the store mutex, as `acquire` and `resume` already did.
 - `acquire --enforce` no longer overwrites the lock with the record it read before freezing. The write-back re-reads the lock under the store mutex, so a note written during the freeze is kept, a lock broken during the freeze stays broken, and another agent's lock taken in that window is neither replaced nor, on a freeze refused as too broad, deleted. A claim lost during the freeze is answered as `:held`, with the files thawed.
+- A forked child walks to its own session process instead of inheriting its parent's answer, so with `holder: :session` (and in `alock` run from a fork) a child's locks are tied to the right process.
 - A backend marker that exists but cannot be read raises `Store::Mismatch` naming the read error, instead of being reported as empty.
 - The file store no longer raises `Errno::ENOENT` when several threads in one process rewrite the same lock (reaping, noting): each write gets its own temp file instead of one per process.
 - A facade is bound by the checkout's backend marker like `alock`: it claims a new checkout for its backend and raises `Store::Mismatch` in one claimed for the other, so a facade and the CLI never take one scope in two stores.

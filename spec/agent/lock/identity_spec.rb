@@ -19,6 +19,31 @@ RSpec.describe Agent::Lock::Identity do
     end
   end
 
+  describe "the session's process after a fork" do
+    def session_pid_in_child
+      reader, writer = IO.pipe
+      Process.wait(fork do
+        writer.puts(described_class.new(env: {}).evidence[:pid])
+        exit!(0)
+      end)
+      writer.close
+      reader.read.to_i
+    end
+
+    it "is walked again from the child, not inherited from the parent's memory" do
+      inherited = described_class.new(env: {}).evidence[:pid]
+
+      expect(session_pid_in_child).to eq(Process.pid).and(satisfy { |pid| pid != inherited })
+    end
+
+    it "is walked once per process" do
+      walks = 0
+      2.times { described_class.session_pid { walks += 1 } }
+
+      expect(walks).to be <= 1
+    end
+  end
+
   describe "the fingerprint, for a harness that exports neither" do
     subject(:identity) { described_class.new(env: {}) }
 

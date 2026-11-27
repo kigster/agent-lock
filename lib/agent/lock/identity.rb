@@ -45,10 +45,19 @@ module Agent
         def current = new
 
         # The ancestry walk, on the other hand, cannot change while this
-        # process lives, and it costs two `ps` calls per hop.
+        # process lives, and it costs two `ps` calls per hop. It is kept per
+        # process: a forked child inherits its parent's memory, and with it
+        # an answer walked from the parent's own parent. The child's session
+        # is found from where the child stands.
         #
+        # @yieldreturn [Integer] the walk, run once per process
         # @return [Integer]
-        def session_pid = @session_pid ||= yield
+        def session_pid
+          owner, pid = @session_pid
+          return pid if owner == ::Process.pid
+
+          (@session_pid = [::Process.pid, yield]).last
+        end
       end
 
       # @param env [Hash]
