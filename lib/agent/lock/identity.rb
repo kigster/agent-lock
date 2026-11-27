@@ -52,8 +52,15 @@ module Agent
       end
 
       # @param env [Hash]
-      def initialize(env: ENV)
+      # @param pid [Integer, nil] the process this session lives and dies
+      #   with. nil walks up from the parent past the shells, which is right
+      #   for the CLI, where the parent is the agent's throwaway shell. An
+      #   in-process caller passes its own pid: walking up from a library
+      #   host finds the host's parent, which outlives a crashed host and
+      #   keeps its locks from ever being reaped.
+      def initialize(env: ENV, pid: nil)
         @env = env
+        @pid = pid
       end
 
       # @return [String] the holder name written into a lock
@@ -165,6 +172,8 @@ module Agent
       #
       # @return [Integer]
       def session_pid
+        return @pid if @pid
+
         self.class.session_pid do
           pid = ::Process.ppid
           MAX_HOPS.times do
