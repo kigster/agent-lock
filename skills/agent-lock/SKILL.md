@@ -32,6 +32,14 @@ cd ~/src/shop && AGENT_ID=shipping-rates-7f3a alock release "src/shipping/**" -u
 
 Exit 2 naming the store means the flags disagree with the checkout or the Redis did not answer. Do not drop the flag to get past it: that puts your lock where nobody else is looking. Report it.
 
+## When a dispatcher started you
+
+A dispatcher (OpenLanes, or any harness) may start you with `AGENT_ID`, `AGENT_PARENT_ID` and `AGENT_LOCK_REDIS_URL` already set. Check with `alock whoami`: if it prints your name and a parent `(from AGENT_PARENT_ID)`, this applies.
+
+- **Leave all three alone.** They put your locks in the dispatcher's store, as its child, which is what lets you claim inside the area it holds for you. Run `alock` with no name prefix and no store flag.
+- **Your sub-agents inherit all three**, so an unnamed one signs as you. Give each its own name and nothing else: `AGENT_ID=<sub-agent-name> alock ...`. Do not make yourself their parent: nobody may claim inside a grandparent's lock, so they would be refused everywhere in the dispatcher's area. Named this way they are your siblings, so release, or never claim, what you hand to one, and their locks are not released by your `release-all`.
+- **Never set `AGENT_PARENT_ID` to nothing.** Empty means "no parent", and you are then refused inside the dispatcher's claim.
+
 ## Recipe
 
 The orchestrator runs `alock` bare, which makes it the parent, and gives each sub-agent a distinct name and the checkout:
@@ -72,4 +80,4 @@ Write only inside what you claimed, and claim the narrowest scope that covers it
 | Running `alock` from wherever the shell started                       | The lock lands in another repository                         |
 | Writing after a refusal                                             | The collision the lock existed to prevent                    |
 
-Needs `agent-lock` newer than 0.1.0 (`alock version`). Run `alock <command> --help` for flags.
+Needs `agent-lock` newer than 0.1.0 (`alock version`); the store flags, `AGENT_LOCK_REDIS_URL` and an empty `AGENT_PARENT_ID` meaning "no parent" need 4.0.0. Run `alock <command> --help` for flags.
