@@ -32,6 +32,37 @@ RSpec.describe Agent::Lock::Facade::Async, type: :checkout do
     expect(facade.check("workflow/**", dir: checkout).status).to eq(:free)
   end
 
+  it "runs a facade's calls in the order they were made" do
+    futures = [
+      facade.async.acquire("workflow/**", dir: checkout),
+      facade.async.note("workflow/**", "halfway", dir: checkout),
+      facade.async.release("workflow/**", dir: checkout)
+    ]
+
+    expect(Concurrent::Promises.zip(*futures).value!.map(&:status)).to eq(%i[acquired noted released])
+    expect(facade.check("workflow/**", dir: checkout).status).to eq(:free)
+  end
+
+  it "runs a call made inside an async block where it stands, never behind the block" do
+    future = facade.async.acquire("workflow/**", dir: checkout) do
+      facade.async.note("workflow/**", "from inside", dir: checkout).value!.status
+    end
+
+    expect(future.value!(5)).to eq(:noted)
+  end
+
+  shared_examples "keeps every note" do
+    it "keeps every one of fifty notes made at once on one scope" do
+      facade.acquire("workflow/**", dir: checkout)
+      futures = Array.new(50) { |index| facade.async.note("workflow/**", "note-#{index}", dir: checkout) }
+
+      expect(Concurrent::Promises.zip(*futures).value!.map(&:status)).to all(eq(:noted))
+      expect(facade.check("workflow/**", dir: checkout).record.intent.scan(/note-\d+/).uniq.size).to eq(50)
+    end
+  end
+
+  it_behaves_like "keeps every note"
+
   it "leaves direct calls synchronous" do
     expect(facade.acquire("workflow/**", dir: checkout)).to be_a(Agent::Lock::Manager::Result)
   end
@@ -55,6 +86,8 @@ RSpec.describe Agent::Lock::Facade::Async, type: :checkout do
     end
 
     before { skip "no Redis on #{RedisHelpers::TEST_REDIS_URL}" unless redis_reachable?(RedisHelpers::TEST_REDIS_URL) }
+
+    it_behaves_like "keeps every note"
 
     it "signs the named holder in the named checkout" do
       record = facade.async.acquire("workflow/**", dir: checkout, agent_id: "rey-frontend").value!.record

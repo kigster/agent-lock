@@ -193,7 +193,9 @@ end # released here
 
 `Facade.new(async: true)` adds `#async`, which runs any lock method on concurrent-ruby's I/O pool and returns a `Concurrent::Promises::Future`. Arguments, keywords and blocks pass through exactly as on a direct call. `value!` returns the result or raises what the call raised; `value` returns nil on failure, with the error in `reason`. Direct calls on the same facade stay synchronous.
 
-concurrent-ruby is not a dependency of this gem: add `gem "concurrent-ruby"` to your Gemfile to use it. Without it, `async: true` raises `LoadError` naming the gem.
+One facade's async calls run one at a time, in the order they were made, so `async.acquire`, `async.note` and `async.release` issued back to back take effect in that order, and fifty `async.note` calls leave fifty notes. Calls on different facades run in parallel. A block given to `async.acquire` runs on that queue: inside it call the facade directly, or call `#async`, which runs inline there.
+
+concurrent-ruby is not a direct dependency of this gem, though `dry-cli-ui` currently installs it. Add `gem "concurrent-ruby"` to your Gemfile so `async: true` does not rest on that; if the gem is missing, `async: true` raises `LoadError` naming it.
 
 ```ruby
 locker = Agent::Lock::Facade.new(strategies: %w[redis], async: true)
