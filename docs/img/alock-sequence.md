@@ -4,7 +4,7 @@
 ---
 config:
   layout: elk
-  look: handrawn
+  look: handDrawn
   fontFamily: Open Sans Variable, sans-serif
   theme: redux-color
 ---

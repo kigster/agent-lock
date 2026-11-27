@@ -1,21 +1,15 @@
 # Changelog
 
-## [4.1.0] - 2026-11-25
+## [4.0.0] - 2026-11-26
 
 ### Added
 
-- `Agent::Lock::Facade`: every command as a Ruby method, run in-process. `Agent::Lock.local` (file store), `Agent::Lock.distributed` (Redis, or `RedisUnavailableError`) and `Agent::Lock.facade` (Redis, else the file store). Thread-safe. See `README.md#from-ruby`.
+- `Agent::Lock::Facade`: every command as a Ruby method, run in-process. `Agent::Lock.local` (file store), `Agent::Lock.distributed` (Redis, or `RedisUnavailableError`) and `Agent::Lock.facade` (Redis, else the file store). Thread-safe. See `README.md#ruby-api`.
 - `Agent::Lock::Refused` and `Agent::Lock::RedisUnavailableError`.
-
-### Fixed
-
-- The file store no longer raises `Errno::ENOENT` when several threads in one process rewrite the same lock (reaping, noting): each write gets its own temp file instead of one per process.
-- A facade is bound by the checkout's backend marker like `alock`: it claims a new checkout for its backend and raises `Store::Mismatch` in one claimed for the other, so a facade and the CLI never take one scope in two stores.
-- The backend marker is written to a temp file and hard-linked into place, so a process that loses the race for a new checkout never reads it empty. A marker that stays empty raises `Store::Mismatch` instead of letting each caller pick its own backend.
-- A facade's Redis client uses the gem's default timeouts; the 0.2s timeout applies only to the connection probe.
-- A fingerprint identity no longer contains spaces when the session's process has retitled itself (macOS reports a Claude Code background job as `claude bg-spare`). Only the first word is kept, so the holder id changes for such sessions.
-
-## [4.0.0] - 2026-11-24
+- `Facade#acquire` takes a block: it yields the result, returns the block's value, and releases afterwards, even when the block raises, `break`s or `throw`s. Only a lock this call took is released, so a nested block on a scope you already hold keeps the outer lock. A refused release does not replace the block's own exception.
+- `Facade.new(async: true)` and `Agent::Lock.facade(async: true)` add `#async`, which runs any lock method on concurrent-ruby's I/O pool and returns a `Concurrent::Promises::Future`. Arguments, keywords and blocks pass through as on a direct call. concurrent-ruby is not a dependency: add it to your Gemfile to use this, or `async: true` raises `LoadError` naming the gem.
+- `alock -h` opens with a boxed title and the version, and links to the README's Ruby API section.
+- A lefthook pre-commit config (rubocop, the staged specs, gitleaks) and a gitleaks config.
 
 ### Changed
 
@@ -26,6 +20,16 @@
 - `alock completion --help` shows each install example once; the zsh one no longer names `_alo`.
 - `rake doc` builds the YARD site from `.yardopts` into the git-ignored `doc/` and opens `doc/index.html`. Every class, method, constant and attribute is documented.
 - The gemspec and README no longer describe the gem as part of agentilda.
+- **Breaking (Ruby):** `Manager#acquire(force:)` is now `wide:`, and `Skill#install(force:)` is now `overwrite:`, matching the CLI flags.
+- The coverage badge in `docs/badges/` is rewritten only under `COVERAGE=true` (`just test-coverage`), so a plain `rspec` run leaves the checkout clean.
+
+### Fixed
+
+- The file store no longer raises `Errno::ENOENT` when several threads in one process rewrite the same lock (reaping, noting): each write gets its own temp file instead of one per process.
+- A facade is bound by the checkout's backend marker like `alock`: it claims a new checkout for its backend and raises `Store::Mismatch` in one claimed for the other, so a facade and the CLI never take one scope in two stores.
+- The backend marker is written to a temp file and hard-linked into place, so a process that loses the race for a new checkout never reads it empty. A marker that stays empty raises `Store::Mismatch` instead of letting each caller pick its own backend.
+- A facade's Redis client uses the gem's default timeouts; the 0.2s timeout applies only to the connection probe.
+- A fingerprint identity no longer contains spaces when the session's process has retitled itself (macOS reports a Claude Code background job as `claude bg-spare`). Only the first word is kept, so the holder id changes for such sessions.
 
 ### Removed
 

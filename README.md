@@ -1,14 +1,11 @@
 
-
 # Distributed Resource Locking for Agents
 
 ## Gem **agent-lock**: `alock` CLI and Ruby Interface
 
-
-
 > ------
 >
-> **`agent-lock` is a versatile advisory locking utility which works like a reservation system: it marks certain files, directories, or "glob" patterns as being "owned" temporarily by a particular client or an agent, so that another client that checks the advisory lock on a given file realizes that the files are being modified by another agent and perhaps switch to work on something else. **
+> **`agent-lock` is a versatile advisory locking utility which works like a reservation system: it marks certain files, directories, or "glob" patterns as being "owned" temporarily by a particular client or an agent, so that another client that checks the advisory lock on a given file realizes that the files are being modified by another agent and perhaps switch to work on something else.**
 >
 > **The system is advisory, meaning that agents (or clients) are supposed to both *acquire the locks and query for the locks using the same mechanism.* Most of the time, setting a lock on the folder or a file won't actually prevent you from writing to one.**
 >
@@ -16,13 +13,11 @@
 >
 > [![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml) ![coverage](docs/badges/coverage_badge.svg)[![Gem Version](https://badge.fury.io/rb/agent-lock.svg)](https://badge.fury.io/rb/agent-lock)
 
-
-
-This is a Ruby Gem that provides both a a CLI utility `alock` that supports advisory locks on files and folders with pluggable backends (**redis** and **file system** provided out of the box, with **redis** being the default if it's available locally or if `$REDIS_URL` is set and points to a working Redis). 
+This is a Ruby Gem that provides both a CLI utility `alock` that supports advisory locks on files and folders with pluggable backends (**redis** and **file system** provided out of the box, with **redis** being the default if it's available locally or if `$REDIS_URL` is set and points to a working Redis), and a Ruby API to the same commands.
 
 > [!NOTE]
 >
-> Only Redis offers distributed locking backend. If two or more nodes (virtual servers, laptops, etc) can connect to the same redis instance, set `REDIS_URL` on each machine to the same value. When you run `alock` or use Ruby API, and  request a lock, you use `acquire`() and pass the 
+> Only the Redis backend is distributed. If two or more nodes (virtual servers, laptops, etc.) can reach the same Redis, set `REDIS_URL` on each machine to the same value. A lock taken with `alock acquire`, or with `acquire` from Ruby, is then seen, and refused, on every machine that checks out the same repository and branch.
 
 This locking tool is meant for coding agents that share a project, whether they run on one machine or on several: with every machine pointed at one Redis, it is a distributed lock.
 
@@ -141,21 +136,23 @@ Release with `alock release-all` when you are done.
 
 Advisory locks work because everybody checks. That is why the rule belongs in the instructions your agents load, and not only here.
 
-### Using it directly From Ruby
+### Ruby API
 
-The utility was built CLI-first, so that it could be used by any language, and any agent framework. Later, however, it became clear that for Ruby projects to use this utility it's much less overhead to use it's public Ruby API instead. Hence the `Facade` class was born, which provides access to an instance of the `agent-lock`, but remains more flexible than the command line, because you are not limited to a single locker in a Ruby VM: you can create one locker that uses Redis, one that uses file system, another one that uses a second Redis instance and so on. In other words, you have more control and flexibility over the locking mechanisms via the Ruby API, plus it saves you a `fork()/exec()` system calls, which is always a bonus on UNIX-like systems.
+The utility was built CLI-first, so that any language and any agent framework can use it. A Ruby project pays less by calling its Ruby API instead: `Agent::Lock::Facade` runs every command in-process, which saves a `fork()`/`exec()` per call.
+
+A Ruby process can also hold more than one locker, for example one per checkout, or a Redis locker and a file-store locker kept deliberately apart. Within one checkout, though, the backend marker binds every locker to the backend that checkout chose first: a file-store facade raises `Agent::Lock::Store::Mismatch` in a checkout claimed for Redis, and two facades on two Redis URLs never see each other's locks. Use separate lockers for separate checkouts or namespaces, never to split one checkout.
 
 #### Mapping `alock` Commands to Ruby API
 
-The same commands that are available when you run `alock -h` become methods on an instnace of the class `Agent::Lock::Facade`, and run within your process, so no Ruby process is started per call. Each returns the `Manager::Result` (`status`, `records`, `record`). Where the command would print a refusal, the method raises `Agent::Lock::Refused`: the message says who holds the scope, and `result` is the `Manager::Result` behind it. Releasing, breaking or resuming a free scope is not a refusal: it returns `:not_found`, although the command exits 1.
+The same commands that are available when you run `alock -h` become methods on an instance of the class `Agent::Lock::Facade`, and run within your process, so no Ruby process is started per call. Each returns the `Manager::Result` (`status`, `records`, `record`). Where the command would print a refusal, the method raises `Agent::Lock::Refused`: the message says who holds the scope, and `result` is the `Manager::Result` behind it. Releasing, breaking or resuming a free scope is not a refusal: it returns `:not_found`, although the command exits 1.
 
 #### Types of Locks
 
 There are three types of Ruby API locks you can use, and each is an instance of the class `Agent::Lock::Facade`:
 
 1. A default version of a local file-system based lock that works great for a single repository work on multiple agents on a single machine. It can be lazy loaded by calling `Agent::Lock.local`
-2. A default version of a distributed lock can be obtained by calling `Agent::Lock.distributed` — this lazy instantiates a Redis-backend lock using `$REDIS_URL` enviroinment variable. If the variable is not set, this call raises an exception.
-3. And of course you can create any number of Agent::Lock::Facade instances by calling it's constructor: `@locker = Agent::Lock::Facade.new(*args, **opts)` (see examples below).
+2. A default version of a distributed lock can be obtained by calling `Agent::Lock.distributed`. It lazily builds a Redis-backed locker from `$REDIS_URL` (default `redis://localhost:6379`), and raises `Agent::Lock::RedisUnavailableError` when that Redis does not answer.
+3. And of course you can create any number of `Agent::Lock::Facade` instances by calling its constructor: `@locker = Agent::Lock::Facade.new(*args, **opts)` (see examples below).
 
 #### Examples
 
@@ -171,14 +168,41 @@ locker = Agent::Lock.local # file store, built once per process.
 # Now we acquire an advisory lock on all files under lib/billing, presumably
 # because we want to work on a billing feature.
 
-locker.acquire	"lib/billing/**", "rewriting the invoices", agent_id: "backend-agent"
-locker.note 		"lib/billing/**", "totals done, specs red", agent_id: "backend-agent"
-locker.check 		"lib/billing/tax.rb", 											agent_id: "backend-agent" # :mine
+locker.acquire "lib/billing/**", "rewriting the invoices", agent_id: "backend-agent"
+locker.note    "lib/billing/**", "totals done, specs red", agent_id: "backend-agent"
+locker.check   "lib/billing/tax.rb", agent_id: "backend-agent" # :mine
 
 # And release all locks held by this agent
 locker.release_all(agent_id: "backend-agent")
-
 ```
+
+#### Acquire with a block
+
+Given a block, `acquire` yields the result, returns the block's value, and releases the lock afterwards, even when the block raises, `break`s or `throw`s. It releases only a lock this call took: inside a scope you already hold, the result is `:already_mine`, and the outer lock survives the inner block. A refusal raises before the block runs. If somebody broke your lock and took the scope while the block ran, the block's own exception still propagates; a block that finished gets the refused release as `Agent::Lock::Refused`.
+
+```ruby
+locker.acquire("lib/billing/**", "rewriting the invoices", agent_id: "backend-agent") do |lock|
+  lock.status # => :acquired
+  rewrite_invoices
+end # released here
+```
+
+#### Async
+
+`Facade.new(async: true)` adds `#async`, which runs any lock method on concurrent-ruby's I/O pool and returns a `Concurrent::Promises::Future`. Arguments, keywords and blocks pass through exactly as on a direct call. `value!` returns the result or raises what the call raised; `value` returns nil on failure, with the error in `reason`. Direct calls on the same facade stay synchronous.
+
+concurrent-ruby is not a dependency of this gem: add `gem "concurrent-ruby"` to your Gemfile to use it. Without it, `async: true` raises `LoadError` naming the gem.
+
+```ruby
+locker = Agent::Lock::Facade.new(strategies: %w[redis], async: true)
+
+future = locker.async.acquire("lib/billing/**", "rewriting the invoices", agent_id: "backend-agent")
+future.value!.status # => :acquired, or raises Agent::Lock::Refused
+
+locker.async.release("lib/billing/**", agent_id: "backend-agent").wait
+```
+
+Wait on every future whose outcome matters, a `release` above all: a future still running when the process exits can be dropped, and the lock then lives until it is reaped.
 
 
 
@@ -186,7 +210,7 @@ locker.release_all(agent_id: "backend-agent")
 
 A facade is frozen and builds a fresh `Manager` per call, so one instance can be shared by any number of threads. `Agent::Lock.local` and `Agent::Lock.distributed` are memoized separately, built once even when several threads ask at the same time, and a `distributed` that failed to connect is retried on the next call. `Facade.new` and `Agent::Lock.facade` each build a fresh facade and leave those two in place. Two facades pointed at two Redis URLs keep separate locks. The checkout's backend marker binds a facade as it binds `alock`: a facade claims a new checkout for its backend, and raises `Agent::Lock::Store::Mismatch` in one already claimed for the other, so a facade and the CLI never split one checkout across the file store and Redis. The marker names the backend, not the Redis URL: a facade given another `redis_url` than the CLI's `REDIS_URL` is still a separate locker.
 
-Every lock method takes `dir:`, `agent_id:`, `parent_id:` and `stale_minutes:`, overriding the facade's defaults for that call; any other keyword raises `ArgumentError`. `check`, `list`, `mine`, `release`, `release_all`, `resume`, `whoami`, `skills_path`, `skills_install` and `version` take the same arguments as the command. `break` is `break_lock` (it returns the result; the command succeeded). `acquire` takes `enforce:` and `allow_wide:`. `skills_install` takes `into:`, `agent:` (the `--for` flag) and `overwrite:`. `whoami` returns the `Identity` the lock would be signed with.
+Every lock method takes `dir:`, `agent_id:`, `parent_id:` and `stale_minutes:`, overriding the facade's defaults for that call; any other keyword raises `ArgumentError`, through `#async` too. `check`, `list`, `mine`, `release`, `release_all`, `resume`, `whoami`, `skills_path`, `skills_install` and `version` take the same arguments as the command. `break` is `break_lock` (it returns the result; the command succeeded). `acquire` takes `enforce:` and `allow_wide:`. `skills_install` takes `into:`, `agent:` (the `--for` flag) and `overwrite:`. `whoami` returns the `Identity` the lock would be signed with.
 
 ## How it works
 
