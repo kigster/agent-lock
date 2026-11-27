@@ -297,8 +297,7 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
       scope = Agent::Lock::Scope.parse("lib/**", tree: trees.first)
       identity = Agent::Lock::Identity.new(env: { "AGENT_ID" => "agent-one" })
       stores.first.create(Agent::Lock::Record.build(scope: scope, tree: trees.first, identity: identity, intent: "x"))
-      major, minor, = Agent::Lock::VERSION.split(".")
-      label = "[alock-#{major}.#{minor}-example/widgets]"
+      label = "[alock-v#{Agent::Lock::VERSION.split(".").first}-example/widgets]"
       digest = Digest::SHA256.hexdigest(trees.first.lock_key)
 
       aggregate_failures do

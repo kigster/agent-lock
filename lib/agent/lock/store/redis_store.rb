@@ -162,15 +162,16 @@ module Agent
         # Where this checkout writes. Every branch of the repository has its
         # own, under one readable label, and {#all} reads them all.
         #
-        # @return [String] `[alock-<major>.<minor>-<owner>/<repo>]-<sha256>`
+        # @return [String] `[alock-v<major>-<owner>/<repo>]-<sha256>`
         def namespace = namespace_for(tree.lock_key)
 
         private
 
-        # `[alock-4.0-kigster/laser-cutter]`. The brackets are literal, so a
-        # person reading `KEYS` can see the gem and the repository. Major and
-        # minor only: a patch keeps the keys it wrote, a minor starts a new
-        # set. GitHub is `owner/repo`; any other host keeps its host, so two
+        # `[alock-v4-kigster/laser-cutter]`. The brackets are literal, so a
+        # person reading `KEYS` can see the gem and the repository. The major
+        # version only: hosts on 4.0 and 4.1 share one Redis and must go on
+        # excluding each other, so only a major release starts a new set.
+        # GitHub is `owner/repo`; any other host keeps its host, so two
         # forges with the same owner and name do not share a label.
         #
         # @return [String]
@@ -312,12 +313,9 @@ module Agent
           # @return [String] `url` with any userinfo replaced by `***`
           def safe(url) = url.to_s.gsub(%r{(?<=://)[^/@\s]*@}, "***@")
 
-          # @return [String] `4.0` from `4.0.3`. A patch stays in the namespace
-          #   it wrote; a new minor starts another one.
-          def version_tag
-            major, minor, = ::Agent::Lock::VERSION.split(".")
-            "#{major}.#{minor}"
-          end
+          # @return [String] `v4` from `4.0.3`. Every minor and patch of a
+          #   major reads and writes one namespace; a new major starts another.
+          def version_tag = "v#{::Agent::Lock::VERSION.split(".").first}"
 
           # redis-rb words its own errors without the password; anything
           # else (a URL that does not parse) may quote the URL back.

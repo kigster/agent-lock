@@ -10,7 +10,7 @@ RSpec.describe Agent::Lock::Store::RedisIndex, type: :checkout do
 
   let(:url) { RedisHelpers::TEST_REDIS_URL }
   let(:redis) { Redis.new(url: url) }
-  let(:major_minor) { Agent::Lock::VERSION.split(".").take(2).join(".") }
+  let(:major) { Agent::Lock::VERSION.split(".").first }
 
   before { skip "no Redis on #{url}" unless redis_reachable?(url) }
 
@@ -41,7 +41,7 @@ RSpec.describe Agent::Lock::Store::RedisIndex, type: :checkout do
     plant(checkout, "git@github.com:kigster/laser-cutter.git", "lib/**", "luke")
     Agent::Lock::Store::RedisStore.new(tree, client: redis).synchronize { :held }
 
-    repo = index.repos.find { |row| row.namespace == "alock-#{major_minor}-kigster/laser-cutter" }
+    repo = index.repos.find { |row| row.namespace == "alock-v#{major}-kigster/laser-cutter" }
 
     aggregate_failures do
       expect(repo.count).to eq(1)

@@ -15,14 +15,14 @@ module Agent
       # The mutex beside them is not a lock and is skipped. Anything still
       # under the old `agent-lock:` prefix is skipped too.
       class RedisIndex
-        # A lock key. The slug is everything after `alock-<major>.<minor>-`
+        # A lock key. The slug is everything after `alock-v<major>-`
         # up to the closing bracket, which for GitHub is `owner/name`.
-        LOCK_KEY = /\A\[(?<label>alock-\d+\.\d+-(?<slug>[^\]]+))\]-(?<digest>[0-9a-f]{64}):(?<id>.+)\z/
+        LOCK_KEY = /\A\[(?<label>alock-v\d+-(?<slug>[^\]]+))\]-(?<digest>[0-9a-f]{64}):(?<id>.+)\z/
 
         # One row of `show repos`.
         #
         # @!attribute [r] namespace
-        #   @return [String] `alock-4.0-kigster/laser-cutter`, brackets aside
+        #   @return [String] `alock-v4-kigster/laser-cutter`, brackets aside
         # @!attribute [r] count
         #   @return [Integer] locks under that label, every branch included
         # @!attribute [r] bytes
@@ -83,7 +83,7 @@ module Agent
         # @raise [Error] when `slug` is not `owner/name`
         def locks(slug)
           wanted = self.class.normalize_slug(slug)
-          pattern = /\Aalock-\d+\.\d+-#{Regexp.escape(wanted)}\z/
+          pattern = /\Aalock-v\d+-#{Regexp.escape(wanted)}\z/
           grouped.select { |label, _entries| label.match?(pattern) }
                  .flat_map { |label, entries| entries.map { |entry| Lock.new(entry[:record], label) } }
                  .sort_by { |lock| [lock.record.scope, lock.record.created_at.to_s] }

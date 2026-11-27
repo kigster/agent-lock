@@ -21,12 +21,12 @@ RSpec.describe Agent::Lock::CLI::Commands::Show do
     agent_lock("acquire workflow 'cutting' -u #{url}")
 
     command = agent_lock("show repos -u #{url}")
-    major, minor, = Agent::Lock::VERSION.split(".")
+    major = Agent::Lock::VERSION.split(".").first
 
     aggregate_failures do
       expect(command).to have_exit_status(0)
       expect(command.stdout).to include("Namespace")
-      expect(command.stdout).to include("alock-#{major}.#{minor}-kigster/laser-cutter")
+      expect(command.stdout).to include("alock-v#{major}-kigster/laser-cutter")
       expect(command.stdout).to include("Memory")
     end
   end
