@@ -2,6 +2,7 @@
 
 require_relative "freeze"
 require_relative "identity"
+require_relative "manager/enforcement"
 require_relative "record"
 require_relative "scope"
 require_relative "store"
@@ -90,12 +91,14 @@ module Agent
       # @return [Result]
       def release(path)
         scope = Scope.parse(path, tree: tree)
-        record = locate(scope, prefer: ->(found) { found.held_by?(identity) })
-        return result(:not_found, []) if record.nil?
-        return result(:refused, [record]) unless record.held_by?(identity)
+        store.synchronize do
+          record = locate(scope, prefer: ->(found) { found.held_by?(identity) })
+          next result(:not_found, []) if record.nil?
+          next result(:refused, [record]) unless record.held_by?(identity)
 
-        drop(record)
-        result(:released, [record])
+          drop(record)
+          result(:released, [record])
+        end
       end
 
       # Whether this session may write in a scope. A parent's lock alone does
@@ -107,8 +110,7 @@ module Agent
       # @return [Result] :held, :mine or :free
       def check(path)
         scope = Scope.parse(path, tree: tree)
-        reap
-        blocking, family = conflicts(scope).partition { |record| record.blocks?(identity) }
+        blocking, family = after_reap { conflicts(scope).partition { |record| record.blocks?(identity) } }
         return result(:held, blocking) if blocking.any?
 
         own = family.select { |record| record.held_by?(identity) }
@@ -117,20 +119,19 @@ module Agent
 
       # @return [Result] every lock in the store, this tree's siblings included
       def list
-        reap
-        result(:listed, store.all)
+        result(:listed, after_reap { store.all })
       end
 
       # @return [Result]
       def mine
-        reap
-        result(:listed, store.all.select { |record| record.held_by?(identity) })
+        result(:listed, after_reap { store.all.select { |record| record.held_by?(identity) } })
       end
 
       # @return [Result]
       def release_all
-        held = store.all.select { |record| record.held_by?(identity) }
-        held.each { |record| drop(record) }
+        held = store.synchronize do
+          store.all.select { |record| record.held_by?(identity) }.each { |record| drop(record) }
+        end
         result(:released, held)
       end
 
@@ -138,11 +139,13 @@ module Agent
       # @return [Result]
       def break_lock(path)
         scope = Scope.parse(path, tree: tree)
-        record = locate(scope)
-        return result(:not_found, []) if record.nil?
+        store.synchronize do
+          record = locate(scope)
+          next result(:not_found, []) if record.nil?
 
-        drop(record)
-        result(:broken, [record])
+          drop(record)
+          result(:broken, [record])
+        end
       end
 
       # Locks whose holder is provably gone, or, for a holder on another host
@@ -173,13 +176,15 @@ module Agent
       # @return [Result]
       def note(path, text)
         scope = Scope.parse(path, tree: tree)
-        record = locate(scope, prefer: ->(found) { found.held_by?(identity) })
-        return result(:not_found, []) if record.nil?
-        return result(:refused, [record]) unless record.held_by?(identity)
+        store.synchronize do
+          record = locate(scope, prefer: ->(found) { found.held_by?(identity) })
+          next result(:not_found, []) if record.nil?
+          next result(:refused, [record]) unless record.held_by?(identity)
 
-        updated = record.note(text)
-        store.update(updated)
-        result(:noted, [updated])
+          updated = record.note(text)
+          store.update(updated)
+          result(:noted, [updated])
+        end
       end
 
       # Take an interrupted lock back, notes and all.
@@ -211,6 +216,20 @@ module Agent
       end
 
       private
+
+      # Reads the store with the reaping that precedes it under one hold of
+      # the mutex, so no other writer lands between the two. Not for use
+      # inside another `synchronize`: the file store's flock is not
+      # re-entrant.
+      #
+      # @yield the read
+      # @return [Object] whatever the block returns
+      def after_reap
+        store.synchronize do
+          reap
+          yield
+        end
+      end
 
       # The critical section of #acquire: the scan, and the write it justifies.
       #
@@ -276,37 +295,20 @@ module Agent
         result(:interrupted, [record]) if record&.orphaned?
       end
 
-      # Freezing happens after the claim is won, never before. Flagging files
-      # first and then losing the race would leave a tree full of unwritable
-      # files that no lock admits to having frozen, which is the one failure
-      # this whole feature is supposed to prevent.
+      # See {Enforcement}.
       #
       # @param record [Record] the lock, already created
       # @param scope [Scope]
       # @param wide [Boolean] freeze even a scope wider than Freeze::LIMIT files
       # @return [Result]
       def enforce_on(record, scope, wide:)
-        wanted = Freeze.matches(scope, tree)
-        frozen = Freeze.apply(wanted, tree: tree, wide: wide)
-        updated = record.with(frozen_paths: frozen)
-        store.update(updated)
-
-        result(:acquired, [updated], freeze_shortfall(wanted, frozen))
+        updated, shortfall = Enforcement.new(tree, store).apply(record, scope, wide:)
+        result(:acquired, [updated], shortfall)
       rescue Freeze::TooBroad
-        # The lock stands; the freeze does not. Undoing the claim here would
-        # be a second surprise on top of the first.
+        # The freeze was refused before anything was flagged, so the claim is
+        # dropped with it rather than left standing unenforced.
         drop(record)
         raise
-      end
-
-      # @param wanted [Array<String>] the files the scope matched
-      # @param frozen [Array<String>] the ones `chflags` accepted
-      # @return [String, nil] said only when the filesystem refused some of it
-      def freeze_shortfall(wanted, frozen)
-        missed = wanted.size - frozen.size
-        return nil if missed.zero?
-
-        "could not freeze #{missed} of #{wanted.size} file(s); the lock still stands"
       end
 
       # Orphaned locks are left out: they carry the notes of a session that
