@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `alock show repos` and `alock show repo owner/name`, Redis only. `show repos` tables each `alock-v<major>-<owner>/<repo>` with its lock count and the memory those keys use. `show repo` tables that repository's locks: scope, holder, how long held, whether the holder is alive on this machine, and the `alock break` command that drops it. Neither command reads the file store. A repository on another forge is named with its host, `show repo gitlab.com/owner/name`. Control characters in a record are not printed, so a planted branch name cannot split the `break` line into two commands. `show repos` warns on STDERR when keys from an older gem are still under `agent-lock:`.
+
+### Changed
+
+- **Breaking for Redis users:** a lock key is `[alock-v<major>-<owner>/<repo>]-<sha256>:<id>`. For `github.com/kigster/laser-cutter` on 4.x that label is `[alock-v4-kigster/laser-cutter]`. The SHA-256 is of `repository@branch`, so every worktree on that branch shares it, and a different branch hashes apart. A detached HEAD hashes `host:worktree-path`. `list` still reads every branch under the label, and the mutex is one per repository (`[alock-v4-kigster/laser-cutter]-mutex`), so a checkout that switched branches can still release the lock it took. GitHub keys drop the host. Any other forge keeps it, so `gitlab.com/kigster/laser-cutter` does not share a label with the GitHub repository. Every 4.x release shares the prefix, so hosts on different minors still exclude each other. Only a new major starts another one. Keys written as `agent-lock:<digest>` are not read and not reaped. Release them before upgrading, or delete them by hand when `AGENT_LOCK_TTL_SECONDS` is `0`. The file store is unchanged.
+
 ## [4.0.0] - 2026-11-26
 
 ### Added

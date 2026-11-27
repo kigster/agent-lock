@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require "fileutils"
 require "redis"
 require "tmpdir"
@@ -79,6 +80,18 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
 
     it "names two checkouts at different paths as one repository" do
       expect(described_class.for(one).repo).to eq(described_class.for(two).repo)
+    end
+
+    it "labels a GitHub repository as owner/name" do
+      cut = checkout_at(File.join(base, "laser"), origin: "git@github.com:kigster/laser-cutter.git")
+
+      expect(described_class.for(cut).redis_slug).to eq("kigster/laser-cutter")
+    end
+
+    it "keeps a non-GitHub host in the label" do
+      other = checkout_at(File.join(base, "gitlab"), origin: "git@gitlab.com:example/widgets.git")
+
+      expect(described_class.for(other).redis_slug).to eq("gitlab.com/example/widgets")
     end
 
     it "keys them alike on one branch" do
@@ -278,16 +291,51 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
 
     after { redis.flushdb if redis_reachable?(RedisHelpers::TEST_REDIS_URL) }
 
-    it "gives every checkout of one repository the same namespace, so a lock taken in one is seen in the other" do
+    it "gives every checkout of one repository on one branch the same key" do
       trees = [one, two].map { |dir| Agent::Lock::Tree.for(dir) }
       stores = trees.map { |tree| described_class.new(tree, client: redis) }
       scope = Agent::Lock::Scope.parse("lib/**", tree: trees.first)
       identity = Agent::Lock::Identity.new(env: { "AGENT_ID" => "agent-one" })
       stores.first.create(Agent::Lock::Record.build(scope: scope, tree: trees.first, identity: identity, intent: "x"))
+      label = "[alock-v#{Agent::Lock::VERSION.split(".").first}-example/widgets]"
+      digest = Digest::SHA256.hexdigest(trees.first.lock_key)
 
       aggregate_failures do
-        expect(stores.map(&:mutex_key).uniq.size).to eq(1)
+        expect(stores.map(&:namespace).uniq).to eq(["#{label}-#{digest}"])
+        expect(stores.map(&:mutex_key).uniq).to eq(["#{label}-mutex"])
         expect(stores.last.find(scope)&.agent_id).to eq("agent-one")
+      end
+    end
+
+    it "hashes a detached worktree by its own path" do
+      git(two, "checkout", "-q", "--detach")
+      detached_tree = Agent::Lock::Tree.for(two)
+      main = described_class.new(Agent::Lock::Tree.for(one), client: redis)
+      detached = described_class.new(detached_tree, client: redis)
+
+      aggregate_failures do
+        expect(detached_tree.lock_key).to eq("#{Socket.gethostname}:#{two}")
+        expect(detached.namespace).to end_with("-#{Digest::SHA256.hexdigest(detached_tree.lock_key)}")
+        expect(detached.namespace).not_to eq(main.namespace)
+        expect(detached.mutex_key).to eq(main.mutex_key)
+      end
+    end
+
+    it "hashes another branch apart, and still lists its locks under the same label" do
+      git(two, "checkout", "-q", "-b", "feature")
+      main_tree = Agent::Lock::Tree.for(one)
+      feature_tree = Agent::Lock::Tree.for(two)
+      main = described_class.new(main_tree, client: redis)
+      feature = described_class.new(feature_tree, client: redis)
+      scope = Agent::Lock::Scope.parse("lib/**", tree: main_tree)
+      identity = Agent::Lock::Identity.new(env: { "AGENT_ID" => "agent-one" })
+      main.create(Agent::Lock::Record.build(scope: scope, tree: main_tree, identity: identity, intent: "x"))
+
+      aggregate_failures do
+        expect(main.namespace).not_to eq(feature.namespace)
+        expect(main.mutex_key).to eq(feature.mutex_key)
+        expect(feature.all.map(&:agent_id)).to eq(["agent-one"])
+        expect(feature.find(scope)).to be_nil
       end
     end
   end

@@ -71,6 +71,21 @@ module Agent
       # @return [String]
       def lock_key = self.class.lock_key(repo: repo, branch: branch, root: root, host: Socket.gethostname)
 
+      # The repository as it should appear in a Redis key a person can read.
+      #
+      # A GitHub origin drops the host, so `github.com/kigster/laser-cutter`
+      # is `kigster/laser-cutter`. Any other host stays in the label: stripping
+      # it would let `gitlab.com/kigster/laser-cutter` wear the GitHub
+      # repository's name. `*?[]` are flattened because this string is also a
+      # Redis SCAN pattern, and those characters are glob syntax.
+      #
+      # @return [String]
+      def redis_slug
+        name = repo.to_s.sub(%r{\Agithub\.com/}, "")
+        name = "unknown" if name.empty?
+        name.gsub(%r{[^A-Za-z0-9._/-]}, "-")
+      end
+
       class << self
         # One definition, shared with Record, so that a lock read back from
         # the store is compared on exactly the terms it was written on.

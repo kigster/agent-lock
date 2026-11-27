@@ -3,6 +3,7 @@
 require_relative "error"
 require_relative "store/file_system_store"
 require_relative "store/redis_store"
+require_relative "store/redis_index"
 
 require "fileutils"
 require "securerandom"
