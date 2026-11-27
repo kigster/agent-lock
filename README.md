@@ -89,7 +89,7 @@ AGENT_ID=billing-b alock acquire "src/billing/tax.rb" "..."       # sub-agent B:
 AGENT_ID=billing-a alock release-all                              # A's own locks, never the orchestrator's
 ```
 
-![diagram](docs/img/alock-sequence.avif)
+![diagram](docs/img/alock-sequence.png)
 
 Three things matter, and each one fails silently if skipped:
 
