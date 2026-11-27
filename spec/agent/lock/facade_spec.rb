@@ -317,6 +317,46 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
       expect(identity.evidence[:pid]).to eq(Process.pid)
     end
 
+    context "with parent_id: false" do
+      let(:session) { described_class.new(strategies: %w[file]) }
+      let(:service) { described_class.new(strategies: %w[file], agent_id: "svc") }
+
+      before { session.acquire("workflow/**", dir: checkout) }
+
+      it "is a child of the session that started it until it says otherwise" do
+        expect(service.acquire("workflow/lib/a.rb", dir: checkout).record.parent_agent_id).to eq(session.whoami.id)
+      end
+
+      it "has no parent, and is blocked by that session's lock like anybody else" do
+        expect(service.whoami(parent_id: false).parent_id).to be_nil
+        expect { service.acquire("workflow/lib/a.rb", dir: checkout, parent_id: false) }
+          .to raise_error(Agent::Lock::Refused, /HELD/)
+      end
+
+      it "writes a record that names no parent" do
+        record = service.acquire("docs/**", dir: checkout, parent_id: false).record
+
+        expect(record.parent_agent_id).to be_nil
+      end
+
+      it "is taken as a facade default, which a call can still overrule with a name" do
+        orphan = described_class.new(strategies: %w[file], agent_id: "svc", parent_id: false)
+
+        expect([orphan.whoami.parent_id, orphan.whoami(parent_id: "boss").parent_id]).to eq([nil, "boss"])
+      end
+
+      it "overrules a facade's default parent for one call" do
+        child = described_class.new(strategies: %w[file], agent_id: "svc", parent_id: "boss")
+
+        expect([child.whoami.parent_id, child.whoami(parent_id: false).parent_id]).to eq(["boss", nil])
+      end
+
+      it "refuses true, which names nobody" do
+        expect { service.whoami(parent_id: true) }.to raise_error(ArgumentError, /parent_id must be a String, or false/)
+        expect { described_class.new(strategies: %w[file], parent_id: 7) }.to raise_error(ArgumentError, /parent_id/)
+      end
+    end
+
     it "signs locks as the session does, whichever process their liveness is tied to" do
       names = %i[process session].map do |holder|
         locker = described_class.new(strategies: %w[file], holder:)

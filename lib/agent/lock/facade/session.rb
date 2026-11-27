@@ -21,7 +21,8 @@ module Agent
 
         # @param backend [Backend]
         # @param agent_id [String, nil] the holder name when a call does not pass one
-        # @param parent_id [String, nil] the parent when a call does not pass one
+        # @param parent_id [String, false, nil] the parent when a call does
+        #   not pass one; `false` says there is none, where nil infers it
         # @param stale_minutes [Integer, nil] nil reads `AGENT_LOCK_STALE_MINUTES`
         # @param holder [Symbol, nil] `:process`, the default, ties a lock to this Ruby process,
         #   so a host that crashes is reaped like a dead `alock` session;
@@ -39,7 +40,7 @@ module Agent
           @holder = Session.holder!(holder, named: !session_name.nil?)
           @backend = backend
           @agent_id = agent_id
-          @parent_id = parent_id
+          @parent_id = Session.parent!(parent_id)
           @stale_minutes = stale_minutes
           @session_name = Session.name!(session_name)
           freeze
@@ -57,6 +58,17 @@ module Agent
             return holder || :process if holder.nil? || HOLDERS.include?(holder)
 
             raise ArgumentError, "holder must be one of #{HOLDERS.join(", ")}, got #{holder.inspect}"
+          end
+
+          # `true` is refused, not read as some parent: it names nobody.
+          #
+          # @param parent [String, false, nil]
+          # @return [String, false, nil]
+          # @raise [ArgumentError] for anything else
+          def parent!(parent)
+            return parent if parent.nil? || parent == false || parent.is_a?(String)
+
+            raise ArgumentError, "parent_id must be a String, or false for none, got #{parent.inspect}"
           end
 
           # A holder id is pasted back into a shell, so it holds nothing a
@@ -95,26 +107,29 @@ module Agent
         # that names none.
         #
         # @param agent_id [String, nil]
-        # @param parent_id [String, nil]
+        # @param parent_id [String, false, nil] `false` for a holder with no
+        #   parent; nil uses the session's default, and without one infers it
         # @param session_name [String, nil] overrides the session's default
         # @return [Identity]
-        # @raise [ArgumentError] for a name that is not one
+        # @raise [ArgumentError] for a name or a parent that is not one
         def identity(agent_id: nil, parent_id: nil, session_name: nil)
           name = Session.name!(session_name) || @session_name
           liveness = ::Process.pid if @holder == :process && name.nil?
-          Identity.new(env: env_for(agent_id || @agent_id, parent_id || @parent_id),
+          parent = Session.parent!(parent_id).nil? ? @parent_id : parent_id
+          Identity.new(env: env_for(agent_id || @agent_id, parent),
                        liveness_pid: liveness, session_name: name)
         end
 
         private
 
         # @param id [String, nil]
-        # @param parent [String, nil]
-        # @return [Hash{String => String}] the environment, with those two named
+        # @param parent [String, false, nil]
+        # @return [Hash{String => String}] the environment, with those two
+        #   named. No parent is AGENT_PARENT_ID set and empty, as on the CLI
         def env_for(id, parent)
           env = ENV.to_h
           env["AGENT_ID"] = id unless id.nil?
-          env["AGENT_PARENT_ID"] = parent unless parent.nil?
+          env["AGENT_PARENT_ID"] = parent || "" unless parent.nil?
           env
         end
       end

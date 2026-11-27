@@ -77,6 +77,15 @@ RSpec.describe Agent::Lock::Identity do
       its(:parent_source) { is_expected.to eq(:explicit) }
     end
 
+    # A top-level service names itself and is nobody's child. Unset means
+    # "work it out"; set and empty means "none".
+    context "when AGENT_PARENT_ID is set and empty" do
+      let(:env) { { "AGENT_ID" => "svc", "AGENT_PARENT_ID" => " " } }
+
+      its(:parent_id) { is_expected.to be_nil }
+      its(:parent_source) { is_expected.to be_nil }
+    end
+
     # Claude Code runs a sub-agent inside its parent's process and tells it
     # nothing, so a sub-agent's one distinguishing mark is the AGENT_ID it
     # was told to use. The session it runs in is, by elimination, its parent.

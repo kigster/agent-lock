@@ -332,6 +332,8 @@ AGENT_ID=luke-backend alock release-all
 
 When `AGENT_ID` is set and `AGENT_PARENT_ID` is not, the parent is taken to be the session's own name, `CLAUDE_SESSION_ID` if the harness exports it and the fingerprint otherwise, which is the orchestrator running bare `alock`. Set `AGENT_PARENT_ID` explicitly when the parent named itself too.
 
+A holder that is nobody's child says so with `AGENT_PARENT_ID` set and empty (`AGENT_ID=svc AGENT_PARENT_ID= alock acquire ...`), or `parent_id: false` in Ruby, per call or as a facade default. A top-level service that names itself needs this: left to inference it is the child of whatever terminal or agent started it, and a lock that session holds does not block it. Unset, or `nil`, still infers.
+
 > [!NOTE]
 > The same rule applies in a terminal. Setting `AGENT_ID` there makes the terminal's own session your parent, so a bare `alock` typed in that terminal can release what you claimed under the name.
 
@@ -421,7 +423,7 @@ Names every command and flag `alock` currently knows, since the script is genera
 | Variable                   | Default                                 | Does                                                                     |
 | :------------------------- | :-------------------------------------- | :----------------------------------------------------------------------- |
 | `AGENT_ID`                 | fingerprint                             | Name this session yourself                                               |
-| `AGENT_PARENT_ID`          | the fingerprint, when `AGENT_ID` is set | The session that spawned this one                                        |
+| `AGENT_PARENT_ID`          | the fingerprint, when `AGENT_ID` is set | The session that spawned this one. Set and empty: no parent              |
 | `AGENT_LOCK_DIR`           | `.git/agent-locks`                      | Keep locks somewhere else                                                |
 | `AGENT_LOCK_STALE_MINUTES` | `120`                                   | When a lock is tagged `STALE`, and when one from another machine, or with no process, expires |
 | `AGENT_LOCK_MUTEX_TIMEOUT` | `15`                                    | Seconds a claim waits for the store's mutex before giving up with exit 2 |
