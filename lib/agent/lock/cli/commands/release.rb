@@ -15,10 +15,10 @@ module Agent
           example ["'lib/billing/**'", "lib/billing/tax.rb"]
 
           # @param scope [String] the scope exactly as it was claimed
-          # @param options [Hash] `:dir`
+          # @param options [Hash] `:dir`, `:locking_strategy`, `:redis_url`
           # @return [Manager::Result] :released, :not_found or :refused
           def call(scope:, **options)
-            result = manager(options[:dir]).release(scope)
+            result = manager(options).release(scope)
 
             case result.status
             when :released then say("RELEASED #{result.record.scope}")

@@ -396,6 +396,8 @@ Flags:
 | Flag           | Where                                                              | Does                                                       |
 | :------------- | :----------------------------------------------------------------- | :--------------------------------------------------------- |
 | `--dir PATH`   | every command that reads locks (not `whoami`, `skills`, `version`) | Act on the checkout that contains `PATH`                   |
+| `-s`, `--locking-strategy redis\|filesystem` | the same commands | Use that store, instead of `AGENT_LOCK_BACKEND` or whichever answers first |
+| `-u`, `--redis-url URL` | the same commands | Use that one Redis, with no fallback. Implies `--locking-strategy redis` |
 | `--json`       | `check`, `list`, `mine`, `whoami`                                  | Machine-readable output                                    |
 | `--enforce`    | `acquire`                                                          | Also freeze the matched files (macOS)                      |
 | `--allow-wide` | `acquire`                                                          | Let `--enforce` freeze more than 500 files                 |
@@ -437,6 +439,20 @@ The search for a Redis runs in a fixed order: `REDIS_URL` first, when it is set,
 AGENT_LOCK_BACKEND=redis alock acquire workflow/**   # force it, rather than autodetect
 AGENT_LOCK_BACKEND=file  alock acquire workflow/**   # or force the file store instead
 ```
+
+The same choice can be made per call, which is how an agent started by a dispatcher lands in the dispatcher's store whatever its own shell exports:
+
+```bash
+alock acquire workflow/** --locking-strategy filesystem            # -s for short; file is another name for it
+alock acquire workflow/** --locking-strategy redis                 # Redis or fail: REDIS_URL, then the local default
+alock acquire workflow/** --redis-url redis://locks.internal:6379  # -u for short: this Redis and no other
+alock release workflow/** --redis-url redis://locks.internal:6379  # every later call names it too
+```
+
+- A flag wins over `AGENT_LOCK_BACKEND`. Neither wins over the tree's marker: naming the store the tree does not use exits 2.
+- `--redis-url` has no fallback. If nothing answers there the command exits 2, and a virgin tree is left unclaimed.
+- The marker records `redis`, not which Redis. Every agent in the tree has to be given the same URL, by the flag or by `REDIS_URL`; two URLs are two stores that cannot see each other's locks.
+- `--redis-url` beside `--locking-strategy filesystem` exits 2.
 
 ### One repository, many machines
 

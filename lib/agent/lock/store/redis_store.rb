@@ -232,6 +232,20 @@ module Agent
         end
 
         class << self
+          # A store on one named Redis, and no other: no `REDIS_URL`, no
+          # local default, no memoized client.
+          #
+          # @param tree [Tree]
+          # @param url [String] a Redis URL
+          # @return [RedisStore]
+          # @raise [Store::Unreachable] when nothing answers on `url`
+          def at(tree, url)
+            client, error = connect(url)
+            raise Store::Unreachable, "Redis did not answer on #{url}: #{error.message}" unless client
+
+            new(tree, client: client, url: url)
+          end
+
           # The URL of the Redis actually in use, once one has answered, or
           # the first one that will be tried before then.
           #
@@ -285,7 +299,7 @@ module Agent
             client = ::Redis.new(url: candidate)
             client.info["redis_version"]
             [client, nil]
-          rescue Redis::CannotConnectError, Redis::BaseError, Errno::ECONNREFUSED, SocketError => e
+          rescue Redis::CannotConnectError, Redis::BaseError, SystemCallError, SocketError, ArgumentError => e
             [nil, e]
           end
         end

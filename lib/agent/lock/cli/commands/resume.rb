@@ -19,10 +19,10 @@ module Agent
           example ["'db/**'"]
 
           # @param scope [String]
-          # @param options [Hash] `:dir`
+          # @param options [Hash] `:dir`, `:locking_strategy`, `:redis_url`
           # @return [Manager::Result] :resumed, :not_found, :held or :interrupted
           def call(scope:, **options)
-            manager = manager(options[:dir])
+            manager = manager(options)
             result = manager.resume(scope)
             report(result, scope, manager.stale_minutes)
             finish(result)

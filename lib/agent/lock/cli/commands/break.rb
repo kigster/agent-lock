@@ -19,10 +19,10 @@ module Agent
           example ["'docs/**'"]
 
           # @param scope [String]
-          # @param options [Hash] `:dir`
+          # @param options [Hash] `:dir`, `:locking_strategy`, `:redis_url`
           # @return [Manager::Result] :broken or :not_found
           def call(scope:, **options)
-            result = manager(options[:dir]).break_lock(scope)
+            result = manager(options).break_lock(scope)
 
             if result.status == :not_found
               say("NOT LOCKED #{scope}")

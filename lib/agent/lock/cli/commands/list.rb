@@ -19,10 +19,10 @@ module Agent
 
           example ["", "--json"]
 
-          # @param options [Hash] `:dir`, `:json`
+          # @param options [Hash] `:dir`, `:locking_strategy`, `:redis_url`, `:json`
           # @return [Manager::Result]
           def call(**options)
-            manager = manager(options[:dir])
+            manager = manager(options)
             result = manager.list
 
             if options[:json]

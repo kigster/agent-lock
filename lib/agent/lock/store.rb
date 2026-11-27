@@ -11,7 +11,8 @@ module Agent
   module Lock
     # Where locks are kept. One tree, one store, chosen on purpose.
     #
-    # AGENT_LOCK_BACKEND wins when set. Otherwise a tree that already has a
+    # A caller that names a backend (`alock --locking-strategy`) wins, then
+    # AGENT_LOCK_BACKEND when set. Otherwise a tree that already has a
     # marker keeps using it. A virgin tree defaults to Redis when one answers
     # on REDIS_URL or, failing that, on the local default; file when neither
     # does.
@@ -37,33 +38,64 @@ module Agent
       # already uses, or for one that does not exist.
       class Mismatch < Error; end
 
+      # Raised when the caller named the Redis to use and it did not answer.
+      # Falling back to another one would put this process in a store the
+      # caller's other agents are not reading.
+      class Unreachable < Error; end
+
       module_function
 
       # @param tree [Tree]
+      # @param backend [String, nil] "file" or "redis", named by the caller;
+      #   nil leaves it to AGENT_LOCK_BACKEND, the marker and the default
+      # @param redis_url [String, nil] the one Redis to use, with no search
+      #   and no fallback; nil searches as {RedisStore.candidate_urls} says
       # @return [Store::FileSystemStore, Store::RedisStore]
-      def for(tree)
-        requested = ENV["AGENT_LOCK_BACKEND"]&.downcase
+      # @raise [Mismatch] when the tree's locks live in the other backend
+      # @raise [Unreachable] when `redis_url` does not answer
+      def for(tree, backend: nil, redis_url: nil)
+        requested = (backend || ("redis" if redis_url) || ENV.fetch("AGENT_LOCK_BACKEND", nil))&.downcase
         established = recorded(tree)
+        return build(agreed(established, requested), tree, redis_url:) if established
 
-        if established
-          if requested && requested != established
-            raise Mismatch, "this tree's locks live in #{established}, not #{requested}, " \
-                            "release them before switching backends"
-          end
+        establish(tree, requested, redis_url)
+      end
 
-          return build(established, tree)
-        end
+      # @param established [String] the backend the tree's marker records
+      # @param requested [String, nil] the backend this process asked for
+      # @return [String] `established`
+      # @raise [Mismatch] when they differ
+      def agreed(established, requested)
+        return established if requested.nil? || requested == established
 
-        build(claim(tree, requested || default_backend), tree)
+        raise Mismatch, "this tree's locks live in #{established}, not #{requested}, " \
+                        "release them before switching backends"
+      end
+
+      # Claims a virgin tree. A named Redis is asked before the marker is
+      # written: a tree bound to a Redis that never answered would refuse
+      # every later command.
+      #
+      # @param tree [Tree]
+      # @param requested [String, nil]
+      # @param redis_url [String, nil]
+      # @return [Store::FileSystemStore, Store::RedisStore]
+      # @raise [Unreachable] when `redis_url` does not answer
+      def establish(tree, requested, redis_url)
+        store = RedisStore.at(tree, redis_url) if redis_url && requested == "redis"
+        claimed = claim(tree, requested || default_backend)
+        claimed == "redis" && store ? store : build(claimed, tree, redis_url:)
       end
 
       # @param name [String] "file" or "redis"
       # @param tree [Tree]
+      # @param redis_url [String, nil] see {.for}
       # @return [Store::FileSystemStore, Store::RedisStore]
       # @raise [Mismatch] for any other name
-      def build(name, tree)
+      # @raise [Unreachable] when `redis_url` does not answer
+      def build(name, tree, redis_url: nil)
         case name
-        when "redis" then RedisStore.new(tree)
+        when "redis" then redis_url ? RedisStore.at(tree, redis_url) : RedisStore.new(tree)
         when "file" then FileSystemStore.new(tree)
         else raise Mismatch, "unknown backend #{name.inspect}, expected file or redis"
         end

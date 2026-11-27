@@ -1,17 +1,20 @@
 # frozen_string_literal: true
 
 require_relative "base"
+require_relative "../../facade/strategies"
 
 module Agent
   module Lock
     module CLI
       module Commands
         # A command that works on the lock store of one checkout, and so
-        # takes `--dir` to name which checkout that is.
+        # takes `--dir` to name which checkout that is, and
+        # `--locking-strategy` and `--redis-url` to name which store.
         #
-        # `--dir` is added in `inherited` rather than restated in every
-        # subclass, so a new lock verb gets it by subclassing and cannot
-        # forget it.
+        # They are added in `inherited` rather than restated in every
+        # subclass, so a new lock verb gets them by subclassing and cannot
+        # forget one. Every verb takes the store flags, not `acquire` alone:
+        # a lock taken on a named Redis is released on that same Redis.
         #
         # @abstract Subclass and implement `#call(**options)`.
         class TreeCommand < Base
@@ -21,6 +24,47 @@ module Agent
             super
             subclass.option :dir, type: :string, default: ".",
                                   desc: "Act on the checkout that contains this directory"
+            subclass.option :locking_strategy, type: :string, aliases: ["-s"],
+                                               desc: "redis or filesystem: where the locks live, instead of " \
+                                                     "AGENT_LOCK_BACKEND or whichever answers first"
+            subclass.option :redis_url, type: :string, aliases: ["-u"],
+                                        desc: "The one Redis to use, with no fallback; implies " \
+                                              "--locking-strategy redis"
+          end
+
+          private
+
+          # @param options [Hash] `:dir`, `:locking_strategy`, `:redis_url`
+          # @return [Manager] bound to the tree that contains `--dir`, and to
+          #   the store the flags name, when they name one
+          # @raise [Dry::CLI::Error] for a strategy that is not one, or a
+          #   Redis URL beside the file store
+          def manager(options)
+            tree = Tree.for(options[:dir] || ".")
+            Manager.new(tree: tree, store: Store.for(tree, **store_options(options)))
+          end
+
+          # @param options [Hash]
+          # @return [Hash] `backend:` and `redis_url:` for {Store.for}
+          # @raise [Dry::CLI::Error]
+          def store_options(options)
+            url = options[:redis_url].to_s.strip
+            backend = backend_named(options[:locking_strategy]) || ("redis" unless url.empty?)
+            raise Dry::CLI::Error, "--redis-url does not go with --locking-strategy filesystem" if
+              backend == "file" && !url.empty?
+
+            { backend: backend, redis_url: (url unless url.empty?) }
+          end
+
+          # @param strategy [String, nil] as typed
+          # @return [String, nil] "redis" or "file"
+          # @raise [Dry::CLI::Error] for anything else
+          def backend_named(strategy)
+            return if strategy.nil?
+
+            Facade::Strategies.canonical(strategy.strip.downcase)
+          rescue ArgumentError
+            raise Dry::CLI::Error, "unknown --locking-strategy #{strategy.inspect}, expected redis or filesystem"
           end
         end
       end

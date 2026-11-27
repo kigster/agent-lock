@@ -34,6 +34,28 @@ RSpec.describe Agent::Lock::Store, type: :checkout do
       described_class.for(tree)
     end
 
+    it "a backend the caller names wins over AGENT_LOCK_BACKEND and a live redis" do
+      redis_reachable(true)
+
+      with_env("AGENT_LOCK_BACKEND" => "redis") do
+        expect(described_class.for(tree, backend: "file")).to be_a(Agent::Lock::Store::FileSystemStore)
+      end
+    end
+
+    it "asks a named redis before it claims the tree, so a dead one leaves no marker" do
+      expect { described_class.for(tree, backend: "redis", redis_url: "redis://127.0.0.1:1/0") }
+        .to raise_error(Agent::Lock::Store::Unreachable, %r{did not answer on redis://127.0.0.1:1/0})
+      expect(described_class.recorded(tree)).to be_nil
+    end
+
+    it "never searches for another redis when one is named" do
+      described_class.claim(tree, "redis")
+      expect(Agent::Lock::Store::RedisStore).not_to receive(:create_client)
+
+      expect { described_class.for(tree, redis_url: "redis://127.0.0.1:1/0") }
+        .to raise_error(Agent::Lock::Store::Unreachable)
+    end
+
     it "AGENT_LOCK_BACKEND wins over a live redis" do
       redis_reachable(true)
 

@@ -11,10 +11,10 @@ module Agent
         class ReleaseAll < TreeCommand
           desc "Release all locks of this session and its sub-agents"
 
-          # @param options [Hash] `:dir`
+          # @param options [Hash] `:dir`, `:locking_strategy`, `:redis_url`
           # @return [Manager::Result] with every record it released
           def call(**options)
-            result = manager(options[:dir]).release_all
+            result = manager(options).release_all
             result.records.each { |record| say("RELEASED #{record.scope}") }
             say("Released #{result.records.size} lock(s).")
             finish(result)
