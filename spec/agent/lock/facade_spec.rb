@@ -14,6 +14,11 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
   describe ".new" do
     it { is_expected.to be_frozen }
 
+    it "refuses a holder other than :process or :session" do
+      expect { described_class.new(strategies: %w[file], holder: :thread) }
+        .to raise_error(ArgumentError, /holder must be one of process, session/)
+    end
+
     it "reads REDIS_URL when no redis_url is given" do
       with_env("REDIS_URL" => "redis://127.0.0.1:1") do
         expect(described_class.new(strategies: %w[file]).redis_url).to eq("redis://127.0.0.1:1")
@@ -300,6 +305,48 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
     it "uses the agent id passed to the call" do
       expect(facade.whoami(agent_id: "rey-frontend").id).to eq("rey-frontend")
     end
+
+    it "ties a lock's liveness to this Ruby process by default" do
+      expect(identity.evidence[:pid]).to eq(Process.pid)
+    end
+
+    it "signs locks as the session does, whichever process their liveness is tied to" do
+      names = %i[process session].map do |holder|
+        locker = described_class.new(strategies: %w[file], holder:)
+        [locker.whoami.id, locker.whoami(agent_id: "worker").parent_id]
+      end
+
+      expect(names.uniq).to eq([[Agent::Lock::Identity.new.id] * 2])
+    end
+
+    it "ties it to the first non-shell ancestor, as alock does, with holder: :session" do
+      session = described_class.new(strategies: %w[file], agent_id: "luke-backend", holder: :session)
+
+      expect(session.whoami.evidence[:pid]).to eq(Agent::Lock::Identity.new.evidence[:pid])
+    end
+  end
+
+  describe "a host that dies holding a lock" do
+    def acquire_in_child(holder)
+      pid = fork do
+        described_class.new(strategies: %w[file], agent_id: "crashed-host", holder:)
+                       .acquire("workflow/**", dir: checkout)
+        exit!(0)
+      end
+      Process.wait(pid)
+    end
+
+    it "is reaped, since the lock named the host itself" do
+      acquire_in_child(:process)
+
+      expect(facade.check("workflow/**", dir: checkout).status).to eq(:free)
+    end
+
+    it "is not reaped with holder: :session while the host's parent lives" do
+      acquire_in_child(:session)
+
+      expect { facade.check("workflow/**", dir: checkout) }.to raise_error(Agent::Lock::Refused, /HELD.*crashed-host/)
+    end
   end
 
   describe "#version" do
@@ -370,12 +417,15 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
       expect(errors).to be_empty
     end
 
-    it "lets many threads note one lock at once without raising" do
+    # A note is a read and a write; outside the store mutex, two threads
+    # read the same lock and the second write dropped the first's note.
+    it "keeps every note when many threads note one lock at once" do
       facade.acquire("workflow/**", dir: checkout)
 
       errors = in_threads(8, 10) { |index| facade.note("workflow/**", "step #{index}", dir: checkout) }
+      kept = facade.check("workflow/**", dir: checkout).record.intent.scan(/ step \d+$/).size
 
-      expect(errors).to be_empty
+      expect([errors, kept]).to eq([[], 80])
     end
   end
 

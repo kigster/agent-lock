@@ -95,7 +95,7 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
       expect(sub.acquire("workflow/lib/cli.rb").status).to eq(:acquired)
     end
 
-    it "takes the store's mutex for the scan and the write, and freezes outside it" do
+    it "takes the store's mutex for the scan and for the write-back, and freezes outside it" do
       inside = false
       frozen_inside = nil
       allow(luke.store).to receive(:synchronize).and_wrap_original do |original, &block|
@@ -115,7 +115,7 @@ RSpec.describe Agent::Lock::Manager, type: :checkout do
 
       aggregate_failures do
         expect(result.status).to eq(:acquired)
-        expect(luke.store).to have_received(:synchronize).once
+        expect(luke.store).to have_received(:synchronize).twice
         expect(frozen_inside).to be(false)
       end
     end

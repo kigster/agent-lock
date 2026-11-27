@@ -67,22 +67,22 @@ module Agent
       # @param strategies [Array<String, Symbol>] backends to try, in order:
       #   `redis`, and `file` (or `filesystem`)
       # @param redis_url [String, nil] defaults to `REDIS_URL`, then {DEFAULT_REDIS_URL}
-      # @param agent_id [String, nil] signs locks when a call does not name its own
-      # @param parent_id [String, nil] that holder's parent, likewise
-      # @param stale_minutes [Integer, nil] nil reads `AGENT_LOCK_STALE_MINUTES`
       # @param async [Boolean] offer {#async}; needs the concurrent-ruby gem
+      # @param defaults [Hash] what a call uses when it does not say:
+      # @option defaults [String] :agent_id signs locks when a call does not name its own
+      # @option defaults [String] :parent_id that holder's parent, likewise
+      # @option defaults [Integer] :stale_minutes nil reads `AGENT_LOCK_STALE_MINUTES`
+      # @option defaults [Symbol] :holder `:process` (default) ties a lock's
+      #   liveness to this Ruby process, so locks left by a crashed host are
+      #   reaped; `:session` ties it to the first non-shell ancestor, as `alock` does
       # @raise [RedisUnavailableError] when no strategy but `redis` is left and it does not answer
-      # @raise [ArgumentError] when `strategies` is empty or names an unknown backend
+      # @raise [ArgumentError] when `strategies` is empty or names an unknown
+      #   backend, `holder` is not `:process` or `:session`, or a default is
+      #   not one of those four
       # @raise [LoadError] when `async` is true and concurrent-ruby is not installed
-      # rubocop:disable-next Metrics/ParameterLists
-      def initialize(strategies: DEFAULT_STRATEGIES,
-                     redis_url: nil,
-                     agent_id: nil,
-                     parent_id: nil,
-                     stale_minutes: nil,
-                     async: false)
+      def initialize(strategies: DEFAULT_STRATEGIES, redis_url: nil, async: false, **defaults)
         @backend = Backend.new(strategies:, redis_url: redis_url || ENV.fetch("REDIS_URL", DEFAULT_REDIS_URL))
-        @session = Session.new(@backend, agent_id:, parent_id:, stale_minutes:)
+        @session = Session.new(@backend, **defaults)
         @async = async ? Async.tap(&:load!).new(self) : nil
         freeze
       end
@@ -278,15 +278,12 @@ module Agent
       #
       # @param strategies [Array<String, Symbol>] see {Facade#initialize}
       # @param redis_url [String, nil] see {Facade#initialize}
-      # @param agent_id [String, nil] see {Facade#initialize}
-      # @param parent_id [String, nil] see {Facade#initialize}
-      # @param stale_minutes [Integer, nil] see {Facade#initialize}
       # @param async [Boolean] see {Facade#initialize}
+      # @param defaults [Hash] `agent_id:`, `parent_id:`, `stale_minutes:`,
+      #   `holder:`; see {Facade#initialize}
       # @return [Facade]
-      # rubocop:disable-next Metrics/ParameterLists
-      def facade(strategies: Facade::DEFAULT_STRATEGIES, redis_url: nil, agent_id: nil, parent_id: nil,
-                 stale_minutes: nil, async: false)
-        Facade.new(strategies:, redis_url:, agent_id:, parent_id:, stale_minutes:, async:)
+      def facade(strategies: Facade::DEFAULT_STRATEGIES, redis_url: nil, async: false, **defaults)
+        Facade.new(strategies:, redis_url:, async:, **defaults)
       end
 
       # Forget {.local} and {.distributed}, so the next call builds each anew.

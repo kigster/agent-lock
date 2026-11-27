@@ -52,8 +52,18 @@ module Agent
       end
 
       # @param env [Hash]
-      def initialize(env: ENV)
+      # @param liveness_pid [Integer, nil] the process a lock lives and dies
+      #   with. nil is the session's own process, found by walking up from
+      #   the parent past the shells, which is right for the CLI, where the
+      #   parent is the agent's throwaway shell. An in-process caller passes
+      #   its own pid: walking up from a library host finds the host's
+      #   parent, which outlives a crashed host and keeps its locks from ever
+      #   being reaped. It is evidence only. The name a lock is signed with,
+      #   and the parent inferred from it, still come from the session, so a
+      #   script an agent runs is the same holder as that agent's `alock`.
+      def initialize(env: ENV, liveness_pid: nil)
         @env = env
+        @liveness_pid = liveness_pid
       end
 
       # @return [String] the holder name written into a lock
@@ -106,7 +116,8 @@ module Agent
       #
       # @return [Hash{Symbol => Object}]
       def evidence
-        { pid: session_pid, started: ProcessInfo.started_at(session_pid), host: Socket.gethostname }
+        pid = @liveness_pid || session_pid
+        { pid: pid, started: ProcessInfo.started_at(pid), host: Socket.gethostname }
       end
 
       private

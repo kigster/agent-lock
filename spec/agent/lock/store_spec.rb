@@ -88,6 +88,17 @@ RSpec.describe Agent::Lock::Store, type: :checkout do
       expect(threads.map(&:value).uniq).to eq([described_class.recorded(tree)])
     end
 
+    it "names an unreadable marker as unreadable, not as empty" do
+      skip "root reads any file" if Process.uid.zero?
+      described_class.claim(tree, "file")
+      File.chmod(0o000, described_class.marker_path(tree))
+
+      expect { described_class.recorded(tree) }
+        .to raise_error(Agent::Lock::Store::Mismatch, /cannot read .*backend: Permission denied/)
+    ensure
+      File.chmod(0o644, described_class.marker_path(tree))
+    end
+
     it "reads a marker that exists but is still empty as no marker" do
       FileUtils.mkdir_p(File.dirname(described_class.marker_path(tree)))
       File.write(described_class.marker_path(tree), "")
