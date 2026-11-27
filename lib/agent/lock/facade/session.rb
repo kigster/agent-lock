@@ -66,7 +66,7 @@ module Agent
           env = ENV.to_h
           env["AGENT_ID"] = id unless id.nil?
           env["AGENT_PARENT_ID"] = parent unless parent.nil?
-          Identity.new(env: env, pid: @holder == :process ? ::Process.pid : nil)
+          Identity.new(env: env, liveness_pid: @holder == :process ? ::Process.pid : nil)
         end
       end
     end

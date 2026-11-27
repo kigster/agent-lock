@@ -310,6 +310,15 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
       expect(identity.evidence[:pid]).to eq(Process.pid)
     end
 
+    it "signs locks as the session does, whichever process their liveness is tied to" do
+      names = %i[process session].map do |holder|
+        locker = described_class.new(strategies: %w[file], holder:)
+        [locker.whoami.id, locker.whoami(agent_id: "worker").parent_id]
+      end
+
+      expect(names.uniq).to eq([[Agent::Lock::Identity.new.id] * 2])
+    end
+
     it "ties it to the first non-shell ancestor, as alock does, with holder: :session" do
       session = described_class.new(strategies: %w[file], agent_id: "luke-backend", holder: :session)
 
