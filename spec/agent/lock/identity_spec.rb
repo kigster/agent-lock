@@ -80,9 +80,21 @@ RSpec.describe Agent::Lock::Identity do
     # A top-level service names itself and is nobody's child. Unset means
     # "work it out"; set and empty means "none".
     context "when AGENT_PARENT_ID is set and empty" do
-      let(:env) { { "AGENT_ID" => "svc", "AGENT_PARENT_ID" => " " } }
+      let(:env) { { "AGENT_ID" => "svc", "AGENT_PARENT_ID" => "" } }
 
       its(:parent_id) { is_expected.to be_nil }
+      its(:parent_source) { is_expected.to eq(:none) }
+    end
+
+    context "when AGENT_PARENT_ID is only whitespace" do
+      let(:env) { { "AGENT_ID" => "svc", "AGENT_PARENT_ID" => " " } }
+
+      its(:parent_source) { is_expected.to eq(:none) }
+    end
+
+    context "when there is nothing to infer one from" do
+      let(:env) { {} }
+
       its(:parent_source) { is_expected.to be_nil }
     end
 

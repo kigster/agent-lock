@@ -103,7 +103,8 @@ RSpec.describe Agent::Lock::CLI do
       set_environment_variable("AGENT_ID", "svc")
       set_environment_variable("AGENT_PARENT_ID", "")
 
-      expect(agent_lock("whoami").stdout).to match(/^parent:\s+none$/)
+      expect(agent_lock("whoami").stdout).to match(/^parent: none  \(AGENT_PARENT_ID is set and empty\)$/)
+      expect(JSON.parse(agent_lock("whoami --json").stdout)).to include("parent_id" => nil, "parent_source" => "none")
     end
 
     it "says who this is, who its parent is, and where each came from" do

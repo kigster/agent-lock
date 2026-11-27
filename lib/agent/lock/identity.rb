@@ -115,8 +115,14 @@ module Agent
       # Where #parent_id came from. An inferred parent is a guess a human may
       # want to overrule with AGENT_PARENT_ID, so it is reported as one.
       #
-      # @return [Symbol, nil] :explicit, :inferred, or nil when there is no parent
+      # A parent declared absent is told apart from one there was nothing to
+      # infer: an AGENT_PARENT_ID exported empty by accident looks the same
+      # in a lock record, and this is where it can be seen.
+      #
+      # @return [Symbol, nil] :explicit, :inferred, :none when the holder
+      #   said it has no parent, or nil when there is none to infer
       def parent_source
+        return :none if parentless?
         return :explicit if declared_parent
 
         :inferred if parent_id

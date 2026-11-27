@@ -332,7 +332,11 @@ AGENT_ID=luke-backend alock release-all
 
 When `AGENT_ID` is set and `AGENT_PARENT_ID` is not, the parent is taken to be the session's own name, `CLAUDE_SESSION_ID` if the harness exports it and the fingerprint otherwise, which is the orchestrator running bare `alock`. Set `AGENT_PARENT_ID` explicitly when the parent named itself too.
 
-A holder that is nobody's child says so with `AGENT_PARENT_ID` set and empty (`AGENT_ID=svc AGENT_PARENT_ID= alock acquire ...`), or `parent_id: false` in Ruby, per call or as a facade default. A top-level service that names itself needs this: left to inference it is the child of whatever terminal or agent started it, and a lock that session holds does not block it. Unset, or `nil`, still infers.
+A holder that is nobody's child says so with `AGENT_PARENT_ID` set and empty (`AGENT_ID=svc AGENT_PARENT_ID= alock acquire ...`), or `parent_id: false` in Ruby, per call or as a facade default. A top-level service that names itself needs this: left to inference it is the child of whatever terminal or agent started it, and a lock that session holds does not block it. Unset still infers. Three things follow from it being an environment variable:
+
+- `alock whoami` prints `parent: none  (AGENT_PARENT_ID is set and empty)`, so a variable exported empty by accident can be told from having no parent to infer. Such a sub-agent is refused inside its orchestrator's lock, and its orchestrator's `release-all` does not release its locks.
+- A service that exports it empty passes that to the agents it starts. Give each of them `AGENT_PARENT_ID=<the service's id>`.
+- In Ruby, `parent_id: nil` means "not said": the facade's default applies, then the process's own `AGENT_PARENT_ID`, then inference. A blank String raises `ArgumentError`.
 
 > [!NOTE]
 > The same rule applies in a terminal. Setting `AGENT_ID` there makes the terminal's own session your parent, so a bare `alock` typed in that terminal can release what you claimed under the name.

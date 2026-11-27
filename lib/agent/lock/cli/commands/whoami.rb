@@ -29,6 +29,7 @@ module Agent
 
           # Where #parent_id came from, likewise.
           PARENT_SOURCES = {
+            none: "AGENT_PARENT_ID is set and empty",
             explicit: "from AGENT_PARENT_ID",
             inferred: "inferred: the session this runs in, since AGENT_ID names somebody else"
           }.freeze
@@ -55,6 +56,7 @@ module Agent
           # @param identity [Identity]
           # @return [String]
           def parent_line(identity)
+            return "parent: none  (#{PARENT_SOURCES.fetch(:none)})" if identity.parent_source == :none
             return "parent: none" if identity.parent_id.nil?
 
             "parent: #{identity.parent_id}  (#{PARENT_SOURCES.fetch(identity.parent_source)})"

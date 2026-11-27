@@ -351,8 +351,37 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
         expect([child.whoami.parent_id, child.whoami(parent_id: false).parent_id]).to eq(["boss", nil])
       end
 
+      it "overrules an AGENT_PARENT_ID the process inherited" do
+        with_env("AGENT_PARENT_ID" => "orchestrator") do
+          expect([service.whoami.parent_id, service.whoami(parent_id: false).parent_id]).to eq(["orchestrator", nil])
+        end
+      end
+
+      it "still holds its own sub-agents' locks as their parent" do
+        service.acquire("docs/**", dir: checkout, parent_id: false)
+        service.acquire("docs/a.md", dir: checkout, agent_id: "kid", parent_id: "svc")
+
+        expect(service.release_all(dir: checkout,
+                                   parent_id: false).records.map(&:agent_id)).to contain_exactly(
+                                     "svc", "kid"
+                                   )
+      end
+
+      it "is left alone by the release_all of the session that started it" do
+        service.acquire("docs/**", dir: checkout, parent_id: false)
+        session.release_all(dir: checkout)
+
+        expect(service.check("docs/**", dir: checkout, parent_id: false).status).to eq(:mine)
+      end
+
+      it "refuses a blank name, which is not how none is said" do
+        ["", " "].each do |blank|
+          expect { service.whoami(parent_id: blank) }.to raise_error(ArgumentError, /a name, or false for none/)
+        end
+      end
+
       it "refuses true, which names nobody" do
-        expect { service.whoami(parent_id: true) }.to raise_error(ArgumentError, /parent_id must be a String, or false/)
+        expect { service.whoami(parent_id: true) }.to raise_error(ArgumentError, /parent_id must be a name, or false/)
         expect { described_class.new(strategies: %w[file], parent_id: 7) }.to raise_error(ArgumentError, /parent_id/)
       end
     end

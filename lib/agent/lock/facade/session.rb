@@ -60,15 +60,19 @@ module Agent
             raise ArgumentError, "holder must be one of #{HOLDERS.join(", ")}, got #{holder.inspect}"
           end
 
-          # `true` is refused, not read as some parent: it names nobody.
+          # `true` is refused, not read as some parent: it names nobody. So
+          # is a blank String, which would otherwise reach the environment
+          # as "no parent": `parent_id: ENV["X"].to_s` is a mistake, and
+          # `false` is how none is said on purpose.
           #
           # @param parent [String, false, nil]
           # @return [String, false, nil]
           # @raise [ArgumentError] for anything else
           def parent!(parent)
-            return parent if parent.nil? || parent == false || parent.is_a?(String)
+            return parent if parent.nil? || parent == false
+            return parent if parent.is_a?(String) && !parent.strip.empty?
 
-            raise ArgumentError, "parent_id must be a String, or false for none, got #{parent.inspect}"
+            raise ArgumentError, "parent_id must be a name, or false for none, got #{parent.inspect}"
           end
 
           # A holder id is pasted back into a shell, so it holds nothing a
@@ -86,7 +90,7 @@ module Agent
 
         # @param dir [String, nil] a directory inside the checkout; nil is the current one
         # @param agent_id [String, nil] overrides the session's default
-        # @param parent_id [String, nil] overrides the session's default
+        # @param parent_id [String, false, nil] overrides the session's default
         # @param stale_minutes [Integer, nil] overrides the session's default
         # @param session_name [String, nil] overrides the session's default
         # @return [Manager] bound to that checkout, this backend and that identity
