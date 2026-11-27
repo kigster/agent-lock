@@ -16,12 +16,14 @@ module Agent
       class Session
         # What a lock's holder may be tied to, for liveness: see {#initialize}.
         HOLDERS = %i[process session].freeze
+        # What a session's name may be made of: see {.name!}.
+        NAME = %r{\A[A-Za-z0-9._:@/+-]+\z}
 
         # @param backend [Backend]
         # @param agent_id [String, nil] the holder name when a call does not pass one
         # @param parent_id [String, nil] the parent when a call does not pass one
         # @param stale_minutes [Integer, nil] nil reads `AGENT_LOCK_STALE_MINUTES`
-        # @param holder [Symbol] `:process` ties a lock to this Ruby process,
+        # @param holder [Symbol, nil] `:process`, the default, ties a lock to this Ruby process,
         #   so a host that crashes is reaped like a dead `alock` session;
         #   `:session` ties it to the first non-shell ancestor, as `alock`
         #   does, for a short script whose lock should outlive it
@@ -57,15 +59,16 @@ module Agent
             raise ArgumentError, "holder must be one of #{HOLDERS.join(", ")}, got #{holder.inspect}"
           end
 
-          # A holder id is pasted back into a shell, so it holds no spaces.
+          # A holder id is pasted back into a shell, so it holds nothing a
+          # shell would read as more than a word.
           #
           # @param name [String, nil]
           # @return [String, nil]
-          # @raise [ArgumentError] for a blank name, or one with whitespace in it
+          # @raise [ArgumentError] for a name that is not {NAME}
           def name!(name)
-            return name if name.nil? || (name.is_a?(String) && name.match?(/\A\S+\z/))
+            return name if name.nil? || (name.is_a?(String) && name.match?(NAME))
 
-            raise ArgumentError, "session_name must be a String with no whitespace, got #{name.inspect}"
+            raise ArgumentError, "session_name must be letters, digits and any of . _ : @ / + -, got #{name.inspect}"
           end
         end
 

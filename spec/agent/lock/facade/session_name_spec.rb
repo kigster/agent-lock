@@ -57,9 +57,57 @@ RSpec.describe Agent::Lock::Facade::Session, type: :checkout do
       expect([record.agent_id, record.pid]).to eq(["plan-004.00", nil])
     end
 
-    it "refuses a name with whitespace in it, or none" do
-      ["plan 3", "", :plan].each do |name|
-        expect { locker(session_name: name) }.to raise_error(ArgumentError, /session_name/)
+    it "refuses a name a shell would not read as one word" do
+      ["plan 3", "", :plan, "plan$(x)", "plan\u00A0three"].each do |name|
+        expect { locker(session_name: name) }.to raise_error(ArgumentError, /session_name must be letters/)
+      end
+    end
+
+    it "gives way to AGENT_ID, and is then that holder's parent" do
+      identity = with_env("AGENT_ID" => "luke-backend") { plan.whoami }
+
+      expect([identity.id, identity.parent_id, identity.evidence[:pid]]).to eq(["luke-backend", "plan-003.00", nil])
+    end
+
+    it "is preferred to CLAUDE_SESSION_ID" do
+      expect(with_env("CLAUDE_SESSION_ID" => "01Tms9skZQfGQs4y") { plan.whoami.id }).to eq("plan-003.00")
+    end
+
+    it "overrides the holder: of a facade for the call that passes it" do
+      identity = locker(holder: :session).whoami(session_name: "plan-004.00")
+
+      expect([identity.id, identity.evidence[:pid]]).to eq(["plan-004.00", nil])
+    end
+
+    it "becomes interrupted work, for its own holder too, when it lapses with notes in it" do
+      plan.acquire("workflow/**", dir: checkout)
+      plan.note("workflow/**", "halfway", dir: checkout)
+      rey.list(dir: checkout, stale_minutes: -1)
+
+      expect { plan.acquire("workflow/**", dir: checkout) }.to raise_error(Agent::Lock::Refused, /INTERRUPTED/)
+      expect(plan.resume("workflow/**", dir: checkout).record.intent).to include("halfway")
+    end
+
+    context "with the Redis store" do
+      subject(:plan) { redis_locker(session_name: "plan-003.00") }
+
+      before do
+        skip "no Redis on #{RedisHelpers::TEST_REDIS_URL}" unless redis_reachable?(RedisHelpers::TEST_REDIS_URL)
+      end
+
+      def redis_locker(**)
+        Agent::Lock::Facade.new(strategies: %w[redis], redis_url: RedisHelpers::TEST_REDIS_URL, **)
+      end
+
+      it "is held after its host exits, and found by a host that gives the same name" do
+        Process.wait(fork do
+          redis_locker(session_name: "plan-003.00").acquire("workflow/**", dir: checkout)
+          exit!(0)
+        end)
+
+        expect { redis_locker(agent_id: "rey-frontend").check("workflow/**", dir: checkout) }
+          .to raise_error(Agent::Lock::Refused, /HELD.*plan-003.00/)
+        expect(plan.release("workflow/**", dir: checkout).status).to eq(:released)
       end
     end
   end

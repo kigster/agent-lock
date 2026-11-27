@@ -18,6 +18,7 @@ module Agent
     # In order of preference:
     #
     #   AGENT_ID             what a human or a harness set on purpose
+    #   session name         what a library caller named its session (`session_name:`)
     #   CLAUDE_SESSION_ID    the session, which survives --resume
     #   fingerprint          the first ancestor process that is not a shell
     #
