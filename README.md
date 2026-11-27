@@ -216,7 +216,15 @@ A facade is frozen and builds a fresh `Manager` per call, so one instance can be
 
 A facade ties each lock's liveness to its own Ruby process (`holder: :process`, the default), so the locks of a host that crashes are reaped like those of a dead `alock` session. `alock` ties a lock to the first ancestor that is not a shell, because its own process exits after every command; pass `holder: :session` for that behaviour, for example from a short script whose lock should outlive it. Either way the lock is signed with the session's holder id, so a script and the `alock` of the session that runs it are one holder.
 
-Every lock method takes `dir:`, `agent_id:`, `parent_id:` and `stale_minutes:`, overriding the facade's defaults for that call; any other keyword raises `ArgumentError`, through `#async` too. `check`, `list`, `mine`, `release`, `release_all`, `resume`, `whoami`, `skills_path`, `skills_install` and `version` take the same arguments as the command. `break` is `break_lock` (it returns the result; the command succeeded). `acquire` takes `enforce:` and `allow_wide:`. `skills_install` takes `into:`, `agent:` (the `--for` flag) and `overwrite:`. `whoami` returns the `Identity` the lock would be signed with.
+A host that restarts while its work goes on names its session instead. `session_name:` (a plan id, a job id; no whitespace) is used as given in place of `CLAUDE_SESSION_ID` and the fingerprint: it signs the facade's locks, and is the inferred parent of a call that passes `agent_id:`. A named session is tied to no process, so its locks survive any number of restarts, a restarted host that gives the same name finds them its own, and they lapse only when untouched for `stale_minutes` (`note` counts as a touch), so release them when the work is done. `holder:` is for a facade that names no session, and raises `ArgumentError` beside `session_name:`.
+
+```ruby
+locks = Agent::Lock::Facade.new(strategies: %w[redis], session_name: "plan-003.00")
+locks.acquire("lib/billing/**", "building")                   # held by plan-003.00, across restarts
+locks.acquire("lib/billing/a.rb", agent_id: "luke-backend")  # its parent is plan-003.00
+```
+
+Every lock method takes `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:` and `session_name:`, overriding the facade's defaults for that call; any other keyword raises `ArgumentError`, through `#async` too. `check`, `list`, `mine`, `release`, `release_all`, `resume`, `whoami`, `skills_path`, `skills_install` and `version` take the same arguments as the command. `break` is `break_lock` (it returns the result; the command succeeded). `acquire` takes `enforce:` and `allow_wide:`. `skills_install` takes `into:`, `agent:` (the `--for` flag) and `overwrite:`. `whoami` returns the `Identity` the lock would be signed with.
 
 ## How it works
 

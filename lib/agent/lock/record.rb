@@ -253,7 +253,7 @@ module Agent
 
       # @return [Boolean] the holder's process is still running, on this host
       def alive?
-        return true unless same_host?
+        return true unless verifiable?
 
         ProcessInfo.alive?(pid, started: started)
       end
@@ -266,11 +266,13 @@ module Agent
       # hours into a refactor lost its lock mid-edit and the next agent walked
       # straight in. A holder on another host cannot be asked, so time is all
       # there is, measured from its last write so that notes act as a
-      # heartbeat.
+      # heartbeat. The same goes for a holder that named no process: a
+      # session known by name (`session_name:`) outlives any one process,
+      # so a restart of its host must not void its locks.
       #
       # @param minutes [Integer] how long an unverifiable lock is trusted
       # @return [Boolean]
-      def expired?(minutes) = same_host? ? !alive? : untouched_for?(minutes)
+      def expired?(minutes) = verifiable? ? !alive? : untouched_for?(minutes)
 
       # A claim still standing, whose holder has not touched it in longer than
       # anybody should need. Reported, never acted on: the holder may be alive
@@ -306,6 +308,9 @@ module Agent
 
       # @return [Boolean] true too when the record names no host
       def same_host? = host.nil? || host == Socket.gethostname
+
+      # @return [Boolean] whether there is a process on this host to ask
+      def verifiable? = same_host? && !pid.nil?
 
       # A lock with no readable timestamp is left alone rather than guessed
       # at: reaping on a parse error would delete live claims.
