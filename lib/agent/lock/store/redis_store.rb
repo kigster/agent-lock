@@ -241,10 +241,37 @@ module Agent
           # @raise [Store::Unreachable] when nothing answers on `url`
           def at(tree, url)
             client, error = connect(url)
-            raise Store::Unreachable, "Redis did not answer on #{url}: #{error.message}" unless client
+            raise Store::Unreachable, "cannot use Redis at #{safe(url)}: #{reason(error)}" unless client
 
             new(tree, client: client, url: url)
           end
+
+          # A store on the first Redis the search finds.
+          #
+          # @param tree [Tree]
+          # @return [RedisStore]
+          # @raise [Store::Unreachable] when none of {.candidate_urls} answers
+          def found(tree)
+            client, error = create_client
+            return new(tree, client: client) if client
+
+            raise Store::Unreachable, "no Redis answered on #{candidate_urls.map { |u| safe(u) }.join(" or ")}: " \
+                                      "#{reason(error)}"
+          end
+
+          # A URL fit to print: an error lands in transcripts and logs, and
+          # a Redis URL may carry a password.
+          #
+          # @param url [String]
+          # @return [String] `url` with any userinfo replaced by `***`
+          def safe(url) = url.to_s.gsub(%r{(?<=://)[^/@\s]*@}, "***@")
+
+          # redis-rb words its own errors without the password; anything
+          # else (a URL that does not parse) may quote the URL back.
+          #
+          # @param error [Exception]
+          # @return [String]
+          def reason(error) = error.is_a?(::Redis::BaseError) ? error.message : error.class.name
 
           # The URL of the Redis actually in use, once one has answered, or
           # the first one that will be tried before then.
@@ -299,7 +326,8 @@ module Agent
             client = ::Redis.new(url: candidate)
             client.info["redis_version"]
             [client, nil]
-          rescue Redis::CannotConnectError, Redis::BaseError, SystemCallError, SocketError, ArgumentError => e
+          rescue Redis::CannotConnectError, Redis::BaseError, SystemCallError, SocketError, ArgumentError,
+                 URI::InvalidURIError => e
             [nil, e]
           end
         end

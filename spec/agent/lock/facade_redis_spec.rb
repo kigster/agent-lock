@@ -38,6 +38,19 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
     Agent::Lock.reset_facades!
   end
 
+  it "keeps one distributed facade per Redis URL" do
+    Agent::Lock.reset_facades!
+    first = Agent::Lock.distributed(redis_url: url_a)
+
+    again = Agent::Lock.distributed(redis_url: url_a)
+    from_env = with_env("AGENT_LOCK_REDIS_URL" => url_a) { Agent::Lock.distributed }
+
+    expect([again, from_env]).to all(equal(first))
+    expect(Agent::Lock.distributed(redis_url: url_b)).not_to equal(first)
+  ensure
+    Agent::Lock.reset_facades!
+  end
+
   it "lets exactly one of several threads take a scope through one Redis facade" do
     facade = described_class.new(strategies: %w[redis], redis_url: url_a)
     outcomes = Array.new(8) do |index|

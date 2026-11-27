@@ -29,7 +29,7 @@ module Agent
                                                      "AGENT_LOCK_BACKEND or whichever answers first"
             subclass.option :redis_url, type: :string, aliases: ["-u"],
                                         desc: "The one Redis to use, with no fallback; implies " \
-                                              "--locking-strategy redis"
+                                              "--locking-strategy redis (env: AGENT_LOCK_REDIS_URL)"
           end
 
           private
@@ -37,8 +37,8 @@ module Agent
           # @param options [Hash] `:dir`, `:locking_strategy`, `:redis_url`
           # @return [Manager] bound to the tree that contains `--dir`, and to
           #   the store the flags name, when they name one
-          # @raise [Dry::CLI::Error] for a strategy that is not one, or a
-          #   Redis URL beside the file store
+          # @raise [Dry::CLI::Error] for a strategy that is not one, or an empty URL
+          # @raise [Store::Mismatch] for a Redis URL beside the file store
           def manager(options)
             tree = Tree.for(options[:dir] || ".")
             Manager.new(tree: tree, store: Store.for(tree, **store_options(options)))
@@ -48,12 +48,11 @@ module Agent
           # @return [Hash] `backend:` and `redis_url:` for {Store.for}
           # @raise [Dry::CLI::Error]
           def store_options(options)
-            url = options[:redis_url].to_s.strip
-            backend = backend_named(options[:locking_strategy]) || ("redis" unless url.empty?)
-            raise Dry::CLI::Error, "--redis-url does not go with --locking-strategy filesystem" if
-              backend == "file" && !url.empty?
+            url = options[:redis_url]&.strip
+            # `-u "$UNSET"` must not quietly become "whichever answers first".
+            raise Dry::CLI::Error, "--redis-url is empty" if url && url.empty?
 
-            { backend: backend, redis_url: (url unless url.empty?) }
+            { backend: backend_named(options[:locking_strategy]), redis_url: url }
           end
 
           # @param strategy [String, nil] as typed

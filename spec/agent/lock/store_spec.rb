@@ -5,7 +5,7 @@
 # failure in whichever backend it picked by accident.
 RSpec.describe Agent::Lock::Store, type: :checkout do
   around do |example|
-    with_env("AGENT_LOCK_BACKEND" => nil, &example)
+    with_env("AGENT_LOCK_BACKEND" => nil, "AGENT_LOCK_REDIS_URL" => nil, &example)
   end
 
   def redis_reachable(reachable)
@@ -44,8 +44,23 @@ RSpec.describe Agent::Lock::Store, type: :checkout do
 
     it "asks a named redis before it claims the tree, so a dead one leaves no marker" do
       expect { described_class.for(tree, backend: "redis", redis_url: "redis://127.0.0.1:1/0") }
-        .to raise_error(Agent::Lock::Store::Unreachable, %r{did not answer on redis://127.0.0.1:1/0})
+        .to raise_error(Agent::Lock::Store::Unreachable, %r{cannot use Redis at redis://127.0.0.1:1/0})
       expect(described_class.recorded(tree)).to be_nil
+    end
+
+    it "refuses a named redis beside the file backend" do
+      expect { described_class.for(tree, backend: "file", redis_url: "redis://127.0.0.1:1/0") }
+        .to raise_error(Agent::Lock::Store::Mismatch, /does not go with the file backend/)
+    end
+
+    it "refuses a caller that asked for redis and lost the tree to the file store meanwhile" do
+      allow(described_class).to receive(:build).and_wrap_original do |build, name, *rest, **opts|
+        described_class.claim(tree, "file") if name == "redis"
+        name == "redis" ? instance_double(Agent::Lock::Store::RedisStore) : build.call(name, *rest, **opts)
+      end
+
+      expect { described_class.establish(tree, "redis", nil) }
+        .to raise_error(Agent::Lock::Store::Mismatch, /live in file, not redis/)
     end
 
     it "never searches for another redis when one is named" do

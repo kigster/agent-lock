@@ -20,7 +20,8 @@ description: Use when several agents or sub-agents write in one checkout or work
 
 Left alone, `alock` uses Redis when one answers and the file store inside `.git` otherwise, and the first call in a checkout records that choice. The caller can choose instead, and should whenever somebody else chose first:
 
-- **You were given a strategy or a Redis URL** (by your orchestrator, a dispatcher, or your instructions): pass it on every `alock` call, not only `acquire`. `-s redis` or `-s filesystem` names the store; `-u <url>` names the one Redis to use and implies `-s redis`.
+- **You were given a strategy or a Redis URL** (by your orchestrator, a dispatcher, or your instructions): pass it on every `alock` call that reads or writes locks (`acquire`, `release`, `release-all`, `check`, `list`, `mine`, `note`, `resume`, `break`), not only `acquire`. `whoami` and `version` take neither flag. `-s redis` or `-s filesystem` names the store; `-u <url>` names the one Redis to use and implies `-s redis`.
+- **`AGENT_LOCK_REDIS_URL` is already set in your environment:** it means the same as `-u` on every call, so pass no flag and do not unset or change it.
 - **You launch sub-agents** and you passed either flag yourself: give each sub-agent the same flags with its name. A different Redis URL is a different store, where nobody sees your locks.
 - **You were given neither:** pass neither.
 

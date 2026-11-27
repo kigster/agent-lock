@@ -19,6 +19,13 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
         .to raise_error(ArgumentError, /holder must be one of process, session/)
     end
 
+    it "reads AGENT_LOCK_REDIS_URL before REDIS_URL when no redis_url is given" do
+      with_env("AGENT_LOCK_REDIS_URL" => "redis://127.0.0.1:1/3", "REDIS_URL" => "redis://127.0.0.1:1") do
+        expect(described_class.redis_url).to eq("redis://127.0.0.1:1/3")
+        expect(described_class.redis_url("redis://127.0.0.1:1/4")).to eq("redis://127.0.0.1:1/4")
+      end
+    end
+
     it "reads REDIS_URL when no redis_url is given" do
       with_env("REDIS_URL" => "redis://127.0.0.1:1") do
         expect(described_class.new(strategies: %w[file]).redis_url).to eq("redis://127.0.0.1:1")

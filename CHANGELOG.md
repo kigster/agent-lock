@@ -10,6 +10,8 @@
 - `Facade.new(async: true)` and `Agent::Lock.facade(async: true)` add `#async`, which runs any lock method on concurrent-ruby's I/O pool and returns a `Concurrent::Promises::Future`. Arguments, keywords and blocks pass through as on a direct call. One facade's async calls run one at a time, in the order they were made. concurrent-ruby is not a direct dependency (`dry-cli-ui` currently installs it): add it to your Gemfile to rely on this; if it is missing, `async: true` raises `LoadError` naming the gem.
 - `holder:` on `Facade.new` and `Agent::Lock.facade`. `:process`, the default, ties a lock's liveness to the Ruby process holding the facade, so a host that crashes has its locks reaped; `:session` keeps `alock`'s first-non-shell-ancestor rule. Only liveness changes: the holder id and the inferred parent still come from the session, so a script an agent runs is the same holder as that agent's `alock`.
 - `alock --locking-strategy redis|filesystem` (`-s`) and `alock --redis-url URL` (`-u`), on every command that reads or writes locks. The caller names the store instead of leaving it to `AGENT_LOCK_BACKEND` or to whichever backend answers first, so an agent started by a dispatcher uses the dispatcher's store. `--redis-url` implies the Redis strategy and uses that one Redis with no fallback: a URL nobody answers on exits 2.
+- `AGENT_LOCK_REDIS_URL`: `--redis-url` from the environment, for a dispatcher to export to its agents. The facade reads it before `REDIS_URL`.
+- `Agent::Lock.distributed(redis_url:)`, memoized per URL.
 - `session_name:` on `Facade.new`, `Agent::Lock.facade` and every lock method. It names the session (a plan id, say) in place of `CLAUDE_SESSION_ID` and the fingerprint, and ties its locks to no process: they survive a host's restarts, a restarted host that gives the same name holds them still, and they lapse when untouched for `stale_minutes`.
 - `alock -h` opens with a boxed title and the version, and links to the README's Ruby API section.
 - A lefthook pre-commit config (rubocop, the staged specs, gitleaks) and a gitleaks config.
@@ -27,6 +29,9 @@
 - The coverage badge in `docs/badges/` is rewritten only under `COVERAGE=true` (`just test-coverage`), so a plain `rspec` run leaves the checkout clean.
 
 ### Fixed
+
+- `alock` exits 2 with an `ERROR:` line on any error it did not expect. It used to print nothing and exit 0, so an `acquire` that died on a malformed `REDIS_URL` looked like a lock taken.
+- `AGENT_LOCK_BACKEND=redis` with no Redis answering no longer claims a virgin tree for Redis before failing.
 
 - Concurrent `note` calls on one lock no longer lose notes: `note`, `release`, `break`, `release-all`, `Manager#reap` and the reaping before `check`, `list` and `mine` now run inside the store mutex, as `acquire` and `resume` already did.
 - `acquire --enforce` no longer overwrites the lock with the record it read before freezing. The write-back re-reads the lock under the store mutex, so a note written during the freeze is kept, a lock broken during the freeze stays broken, and another agent's lock taken in that window is neither replaced nor, on a freeze refused as too broad, deleted. A claim lost during the freeze is answered as `:held`, with the files thawed.
