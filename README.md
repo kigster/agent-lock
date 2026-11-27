@@ -11,7 +11,7 @@
 >
 > ------
 >
-> [![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml) ![coverage](docs/badges/coverage_badge.svg)[![Gem Version](https://badge.fury.io/rb/agent-lock.svg)](https://badge.fury.io/rb/agent-lock) [![yardoc](docs/badges/yardoc.svg)](https://kigster.github.io/agent-lock/)
+> [![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml) ![coverage](docs/badges/coverage_badge.svg) [![Gem Version](https://badge.fury.io/rb/agent-lock.svg)](https://badge.fury.io/rb/agent-lock) [![yardoc](docs/badges/yardoc.svg)](https://kigster.github.io/agent-lock/)
 >
 > 
 
