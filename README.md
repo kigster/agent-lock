@@ -11,7 +11,9 @@
 >
 > ------
 >
-> [![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml) ![coverage](docs/badges/coverage_badge.svg)[![Gem Version](https://badge.fury.io/rb/agent-lock.svg)](https://badge.fury.io/rb/agent-lock)
+> [![Ruby](https://github.com/kigster/agent-lock/actions/workflows/main.yml/badge.svg)](https://github.com/kigster/agent-lock/actions/workflows/main.yml) ![coverage](docs/badges/coverage_badge.svg)[![Gem Version](https://badge.fury.io/rb/agent-lock.svg)](https://badge.fury.io/rb/agent-lock) [![yardoc](docs/badges/yardoc.svg)](https://kigster.github.io/agent-lock/)
+>
+> 
 
 This is a Ruby Gem that provides both a CLI utility `alock` that supports advisory locks on files and folders with pluggable backends (**redis** and **file system** provided out of the box, with **redis** being the default if it's available locally or if `$REDIS_URL` is set and points to a working Redis), and a Ruby API to the same commands.
 
