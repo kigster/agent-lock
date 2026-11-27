@@ -35,6 +35,7 @@ module Agent
     # - `agent_id:` [String] who holds the lock
     # - `parent_id:` [String] that holder's parent session
     # - `stale_minutes:` [Integer] when an unverifiable lock counts as stale
+    # - `session_name:` [String] the session's name, tied to no process
     #
     # The checkout's backend marker binds a facade just as it binds `alock`:
     # a facade claims a virgin checkout for its backend, and raises
@@ -75,10 +76,14 @@ module Agent
       # @option defaults [Symbol] :holder `:process` (default) ties a lock's
       #   liveness to this Ruby process, so locks left by a crashed host are
       #   reaped; `:session` ties it to the first non-shell ancestor, as `alock` does
+      # @option defaults [String] :session_name the session's name, such as a
+      #   plan id, in place of `CLAUDE_SESSION_ID` and the fingerprint, and
+      #   in place of `holder:`. Its locks are tied to no process: they
+      #   survive a restart and lapse when untouched for `stale_minutes`
       # @raise [RedisUnavailableError] when no strategy but `redis` is left and it does not answer
       # @raise [ArgumentError] when `strategies` is empty or names an unknown
-      #   backend, `holder` is not `:process` or `:session`, or a default is
-      #   not one of those four
+      #   backend, `holder` is not `:process` or `:session` or is given
+      #   beside `session_name`, or a default is not one of those five
       # @raise [LoadError] when `async` is true and concurrent-ruby is not installed
       def initialize(strategies: DEFAULT_STRATEGIES, redis_url: nil, async: false, **defaults)
         @backend = Backend.new(strategies:, redis_url: redis_url || ENV.fetch("REDIS_URL", DEFAULT_REDIS_URL))
@@ -120,7 +125,8 @@ module Agent
       # @param intent [String, nil] what the holder is about to do
       # @param enforce [Boolean] also freeze the matched files (macOS only)
       # @param allow_wide [Boolean] let `enforce` freeze more than {Freeze::LIMIT} files
-      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`,
+      #   `session_name:`
       # @yieldparam result [Manager::Result] `:acquired`, or `:already_mine`
       # @return [Manager::Result] without a block: `:acquired`, or `:already_mine`
       # @return [Object] with a block: the block's value
@@ -141,7 +147,8 @@ module Agent
       # `alock release`.
       #
       # @param scope [String]
-      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`,
+      #   `session_name:`
       # @return [Manager::Result] `:released`, or `:not_found` when nothing is locked there
       # @raise [Refused] when another agent holds it
       def release(scope, **session) = Refusal.check!(@session.manager(**session).release(scope), scope:)
@@ -149,26 +156,30 @@ module Agent
       # `alock check`: may I write here?
       #
       # @param scope [String]
-      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`,
+      #   `session_name:`
       # @return [Manager::Result] `:free`, or `:mine`
       # @raise [Refused] when another agent holds an overlapping scope
       def check(scope, **session) = Refusal.check!(@session.manager(**session).check(scope), scope:)
 
       # `alock list`.
       #
-      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`,
+      #   `session_name:`
       # @return [Manager::Result] every lock in this facade's store
       def list(**session) = @session.manager(**session).list
 
       # `alock mine`.
       #
-      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`,
+      #   `session_name:`
       # @return [Manager::Result] locks held by this identity and its sub-agents
       def mine(**session) = @session.manager(**session).mine
 
       # `alock release-all`.
       #
-      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`,
+      #   `session_name:`
       # @return [Manager::Result] what was released
       def release_all(**session) = @session.manager(**session).release_all
 
@@ -176,7 +187,8 @@ module Agent
       # raises a refusal: breaking a free scope returns `:not_found`.
       #
       # @param scope [String]
-      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`,
+      #   `session_name:`
       # @return [Manager::Result] `:broken`, or `:not_found`
       def break_lock(scope, **session) = @session.manager(**session).break_lock(scope)
 
@@ -184,7 +196,8 @@ module Agent
       #
       # @param scope [String]
       # @param text [String]
-      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`,
+      #   `session_name:`
       # @return [Manager::Result] `:noted`
       # @raise [Refused] when nothing is locked there, or another agent holds it
       def note(scope, text, **session)
@@ -194,7 +207,8 @@ module Agent
       # `alock resume`: take back interrupted work, notes and all.
       #
       # @param scope [String]
-      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`
+      # @param session [Hash] `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:`,
+      #   `session_name:`
       # @return [Manager::Result] `:resumed`, or `:not_found` when there is nothing to resume
       # @raise [Refused] when another agent holds an overlapping scope, or the
       #   interrupted work could not be moved onto this scope
@@ -202,10 +216,9 @@ module Agent
 
       # `alock whoami`: who a lock taken through this facade would name.
       #
-      # @param agent_id [String, nil]
-      # @param parent_id [String, nil]
+      # @param session [Hash] `agent_id:`, `parent_id:`, `session_name:`
       # @return [Identity]
-      def whoami(agent_id: nil, parent_id: nil) = @session.identity(agent_id:, parent_id:)
+      def whoami(**session) = @session.identity(**session)
 
       # `alock skills path`.
       #
@@ -280,7 +293,7 @@ module Agent
       # @param redis_url [String, nil] see {Facade#initialize}
       # @param async [Boolean] see {Facade#initialize}
       # @param defaults [Hash] `agent_id:`, `parent_id:`, `stale_minutes:`,
-      #   `holder:`; see {Facade#initialize}
+      #   `holder:`, `session_name:`; see {Facade#initialize}
       # @return [Facade]
       def facade(strategies: Facade::DEFAULT_STRATEGIES, redis_url: nil, async: false, **defaults)
         Facade.new(strategies:, redis_url:, async:, **defaults)

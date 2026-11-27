@@ -216,7 +216,23 @@ A facade is frozen and builds a fresh `Manager` per call, so one instance can be
 
 A facade ties each lock's liveness to its own Ruby process (`holder: :process`, the default), so the locks of a host that crashes are reaped like those of a dead `alock` session. `alock` ties a lock to the first ancestor that is not a shell, because its own process exits after every command; pass `holder: :session` for that behaviour, for example from a short script whose lock should outlive it. Either way the lock is signed with the session's holder id, so a script and the `alock` of the session that runs it are one holder.
 
-Every lock method takes `dir:`, `agent_id:`, `parent_id:` and `stale_minutes:`, overriding the facade's defaults for that call; any other keyword raises `ArgumentError`, through `#async` too. `check`, `list`, `mine`, `release`, `release_all`, `resume`, `whoami`, `skills_path`, `skills_install` and `version` take the same arguments as the command. `break` is `break_lock` (it returns the result; the command succeeded). `acquire` takes `enforce:` and `allow_wide:`. `skills_install` takes `into:`, `agent:` (the `--for` flag) and `overwrite:`. `whoami` returns the `Identity` the lock would be signed with.
+A host that restarts while its work goes on names its session instead. `session_name:` (a plan id, a job id: letters, digits and `. _ : @ / + -`) is used as given in place of `CLAUDE_SESSION_ID` and the fingerprint. It signs the facade's locks unless the call passes `agent_id:` or `AGENT_ID` is set, and then it is that holder's inferred parent. A lock taken under a session name is tied to no process, the named agents' locks included:
+
+- It survives any number of restarts, and a restarted host that gives the same name finds it its own.
+- It lapses when untouched for the stale window of whoever looks at it: a plain `alock list` clears one that has been quiet for 120 minutes, whatever `stale_minutes:` its holder passed. `note` is the only heartbeat, so a long silent job should write one now and then.
+- A lapsed lock with notes becomes interrupted work, for its own holder too: `resume` takes it back. One without notes is simply free again.
+- On Redis, `AGENT_LOCK_TTL_SECONDS` still expires it outright, notes and all.
+- Release it when the work is done; nothing else will until the window passes.
+
+`holder:` is for a facade that names no session: `Facade.new` raises `ArgumentError` given both, and a `session_name:` passed to one call overrides the facade's `holder:` for that call.
+
+```ruby
+locks = Agent::Lock::Facade.new(strategies: %w[redis], session_name: "plan-003.00")
+locks.acquire("lib/billing/**", "building")                   # held by plan-003.00, across restarts
+locks.acquire("lib/billing/a.rb", agent_id: "luke-backend")  # its parent is plan-003.00
+```
+
+Every lock method takes `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:` and `session_name:`, overriding the facade's defaults for that call; any other keyword raises `ArgumentError`, through `#async` too. `check`, `list`, `mine`, `release`, `release_all`, `resume`, `whoami`, `skills_path`, `skills_install` and `version` take the same arguments as the command. `break` is `break_lock` (it returns the result; the command succeeded). `acquire` takes `enforce:` and `allow_wide:`. `skills_install` takes `into:`, `agent:` (the `--for` flag) and `overwrite:`. `whoami` returns the `Identity` the lock would be signed with.
 
 ## How it works
 
@@ -338,7 +354,7 @@ INTERRUPTED WORK on workflow/**, left by luke-backend
 > [!WARNING]
 > An orphan blocks nobody, but `acquire` will not silently overwrite one, because the notes inside it may be the only record of half-finished work. Choose `resume` or `break`.
 
-A live holder's lock is never cleared, no matter how old it is. An agent may legitimately work on one scope for hours, and deleting its lock underneath it would hand its files to the next agent while it is still writing them. Past the stale window `list`, `check` and `mine` tag it `STALE` instead, and taking it is a `break` that somebody announces first.
+A live holder's lock is never cleared, no matter how old it is. (A lock taken under a `session_name:` names no process, so it is the exception: see the Ruby API section.) An agent may legitimately work on one scope for hours, and deleting its lock underneath it would hand its files to the next agent while it is still writing them. Past the stale window `list`, `check` and `mine` tag it `STALE` instead, and taking it is a `break` that somebody announces first.
 
 ```
 $ alock list
@@ -405,7 +421,7 @@ Names every command and flag `alock` currently knows, since the script is genera
 | `AGENT_ID`                 | fingerprint                             | Name this session yourself                                               |
 | `AGENT_PARENT_ID`          | the fingerprint, when `AGENT_ID` is set | The session that spawned this one                                        |
 | `AGENT_LOCK_DIR`           | `.git/agent-locks`                      | Keep locks somewhere else                                                |
-| `AGENT_LOCK_STALE_MINUTES` | `120`                                   | When a lock is tagged `STALE`, and when one from another machine expires |
+| `AGENT_LOCK_STALE_MINUTES` | `120`                                   | When a lock is tagged `STALE`, and when one from another machine, or with no process, expires |
 | `AGENT_LOCK_MUTEX_TIMEOUT` | `15`                                    | Seconds a claim waits for the store's mutex before giving up with exit 2 |
 | `AGENT_LOCK_BACKEND`       | `redis` if one answers, else `file`     | `file` or `redis`                                                        |
 | `AGENT_LOCK_TTL_SECONDS`   | `0`                                     | Redis expiry. `0` means no TTL                                           |

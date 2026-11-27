@@ -18,6 +18,7 @@ module Agent
     # In order of preference:
     #
     #   AGENT_ID             what a human or a harness set on purpose
+    #   session name         what a library caller named its session (`session_name:`)
     #   CLAUDE_SESSION_ID    the session, which survives --resume
     #   fingerprint          the first ancestor process that is not a shell
     #
@@ -61,9 +62,15 @@ module Agent
       #   being reaped. It is evidence only. The name a lock is signed with,
       #   and the parent inferred from it, still come from the session, so a
       #   script an agent runs is the same holder as that agent's `alock`.
-      def initialize(env: ENV, liveness_pid: nil)
+      # @param session_name [String, nil] the session's name, used as given
+      #   in place of `CLAUDE_SESSION_ID` and the fingerprint: a plan id, a
+      #   job id. A session known by name alone is tied to no process, so
+      #   its evidence carries no pid and its locks are trusted for the
+      #   stale window from their last write: see {Record#expired?}
+      def initialize(env: ENV, liveness_pid: nil, session_name: nil)
         @env = env
         @liveness_pid = liveness_pid
+        @session_name = session_name
       end
 
       # @return [String] the holder name written into a lock
@@ -116,7 +123,7 @@ module Agent
       #
       # @return [Hash{Symbol => Object}]
       def evidence
-        pid = @liveness_pid || session_pid
+        pid = @liveness_pid || (session_pid unless @session_name)
         { pid: pid, started: ProcessInfo.started_at(pid), host: Socket.gethostname }
       end
 
@@ -143,8 +150,11 @@ module Agent
         own unless own == explicit
       end
 
-      # @return [String, nil] e.g. "session-1f4c8a02", from CLAUDE_SESSION_ID
+      # @return [String, nil] the name the caller gave the session, else
+      #   e.g. "session-1f4c8a02", from CLAUDE_SESSION_ID
       def session
+        return @session_name if @session_name
+
         value = presence(@env["CLAUDE_SESSION_ID"])
         value && "session-#{value[0, 8]}"
       end
