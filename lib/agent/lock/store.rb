@@ -69,14 +69,22 @@ module Agent
         end
       end
 
+      # A marker that is missing, or still empty, is none. One that exists
+      # but cannot be read is an error, named as such: taken for none, it
+      # ended up reported as "exists but is empty", or, before that, let a
+      # caller pick its own backend.
+      #
       # @param tree [Tree]
       # @return [String, nil] the backend this tree already uses
+      # @raise [Mismatch] when the marker exists but cannot be read
       def recorded(tree)
         path = marker_path(tree)
-        value = File.exist?(path) ? File.read(path).strip : ""
+        value = File.read(path).strip
         value.empty? ? nil : value
-      rescue SystemCallError
+      rescue Errno::ENOENT, Errno::ENOTDIR
         nil
+      rescue SystemCallError => e
+        raise Mismatch, "cannot read #{path}: #{e.message}; fix its permissions or delete it"
       end
 
       # Atomically claims the marker for a virgin tree with `name`, or, when a
