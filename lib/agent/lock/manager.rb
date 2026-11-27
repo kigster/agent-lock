@@ -71,14 +71,17 @@ module Agent
       # ten sessions claiming `lib/**` and `lib/a.rb` at once each saw a clear
       # field and each wrote a lock, leaving overlapping claims that all
       # reported success. Freezing stays outside: it walks the tree and runs
-      # `chflags`, and every other session would be waiting on it.
+      # `chflags`, and every other session would be waiting on it. What it
+      # writes afterwards goes back under the mutex: see {Enforcement}.
       #
       # @param path [String] a path or a glob
       # @param intent [String]
       # @param enforce [Boolean] also make the matched files unwritable
       # @param wide [Boolean] freeze even a scope wider than Freeze::LIMIT files
       # @return [Result] :acquired, or :already_mine, :held, :parent_scope or
-      #   :interrupted with the records that explain why not
+      #   :interrupted with the records that explain why not. With `enforce`,
+      #   :held also answers a lock that was broken while its files were
+      #   being frozen, with whoever holds the scope now
       def acquire(path, intent: "unspecified", enforce: false, wide: false)
         scope = Scope.parse(path, tree: tree)
         outcome = store.synchronize { take(scope, intent) }
@@ -160,13 +163,11 @@ module Agent
       # halfway, and a reboot is the most likely reason there are any. Whoever
       # comes next sees them, and `resume` takes the lock and the notes back.
       #
+      # Takes the store's mutex, so it is not for use inside another
+      # `synchronize`: the verbs here call {#sweep} there instead.
+      #
       # @return [Array<Record>] what it cleared out of the way
-      def reap
-        store.all.select { |record| record.active? && record.expired?(stale_minutes) }.map do |record|
-          record.notes? ? orphan(record) : drop(record)
-          record
-        end
-      end
+      def reap = store.synchronize { sweep }
 
       # Write a line into a lock this session holds, so that a machine coming
       # back up has something better than the diff to work out where it was.
@@ -204,7 +205,7 @@ module Agent
       def resume(path)
         scope = Scope.parse(path, tree: tree)
         store.synchronize do
-          reap
+          sweep
           record = locate(scope, prefer: :orphaned?.to_proc)
           next result(:not_found, []) if record.nil? || record.active?
 
@@ -226,8 +227,18 @@ module Agent
       # @return [Object] whatever the block returns
       def after_reap
         store.synchronize do
-          reap
+          sweep
           yield
+        end
+      end
+
+      # {#reap} without the mutex, for a caller already holding it.
+      #
+      # @return [Array<Record>] what it cleared out of the way
+      def sweep
+        store.all.select { |record| record.active? && record.expired?(stale_minutes) }.map do |record|
+          record.notes? ? orphan(record) : drop(record)
+          record
         end
       end
 
@@ -237,7 +248,7 @@ module Agent
       # @param intent [String]
       # @return [Result]
       def take(scope, intent)
-        reap
+        sweep
         refusal = why_not(scope)
         return refusal if refusal
 
@@ -303,12 +314,10 @@ module Agent
       # @return [Result]
       def enforce_on(record, scope, wide:)
         updated, shortfall = Enforcement.new(tree, store).apply(record, scope, wide:)
-        result(:acquired, [updated], shortfall)
-      rescue Freeze::TooBroad
-        # The freeze was refused before anything was flagged, so the claim is
-        # dropped with it rather than left standing unenforced.
-        drop(record)
-        raise
+        return result(:acquired, [updated], shortfall) if updated
+
+        result(:held, store.synchronize { conflicts(scope) },
+               "#{scope} was broken while its files were being frozen; nothing is frozen")
       end
 
       # Orphaned locks are left out: they carry the notes of a session that

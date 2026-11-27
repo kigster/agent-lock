@@ -15,7 +15,8 @@ module Agent
         # typed it, for the one status (`:not_found`) that has no record.
         MESSAGES = {
           held: lambda { |result, _scope|
-            ["REFUSED, do not write here", *result.records.map { |record| Refusal.held_line(record) }].join("\n")
+            ["REFUSED, do not write here", result.message,
+             *result.records.map { |record| Refusal.held_line(record) }].compact.join("\n")
           },
           parent_scope: lambda { |result, _scope|
             "REFUSED: #{result.record.scope} is your parent's (#{result.record.agent_id}) whole claim; " \

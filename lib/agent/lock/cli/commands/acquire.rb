@@ -50,6 +50,7 @@ module Agent
             when :already_mine then say("ALREADY YOURS #{result.record.scope}")
             when :held
               warn_("REFUSED, do not write here")
+              warn_(result.message) if result.message
               report_held(result.records, stale_minutes: stale_minutes)
             when :interrupted then report_interrupted(result.record)
             when :parent_scope then report_parent_scope(result.record)
