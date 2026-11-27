@@ -74,6 +74,11 @@ module Agent
         # @return [String] the store by name, its URL without any password
         def describe = "redis #{self.class.safe(url)} (#{namespace})"
 
+        # The default would print `@url` as given, password and all.
+        #
+        # @return [String]
+        def inspect = "#<#{self.class.name} #{describe}>"
+
         # SCAN rather than KEYS: this runs on whatever Redis the machine
         # already has, which may be somebody's shared development instance,
         # and KEYS blocks the server for the length of the scan.
@@ -310,11 +315,19 @@ module Agent
           # A URL fit to print: an error lands in transcripts and logs, and
           # a Redis URL may carry a password. Everything up to the last `@`
           # goes, because a password that was never percent-encoded may hold
-          # a space, a `/` or an `@` of its own.
+          # a space, a `/` or an `@` of its own. Only a `scheme://` in front
+          # is kept: a mistyped `rey:secret@host` has no scheme to trust, and
+          # is the URL most likely to end up in an error.
           #
           # @param url [String] one URL, and nothing else
           # @return [String] `url` with any userinfo replaced by `***`
-          def safe(url) = url.to_s.sub(%r{(?<=://).*@}m, "***@")
+          def safe(url)
+            text = url.to_s
+            at = text.rindex("@")
+            return text unless at
+
+            "#{text[%r{\A[a-z][a-z0-9+.-]*://}i]}***#{text[at..]}"
+          end
 
           # The same for a sentence that may quote URLs: the last net under
           # an error somebody else worded. It cannot tell where an unencoded
