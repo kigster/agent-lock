@@ -13,8 +13,12 @@ module Agent
       #
       # Keys are the ones {RedisStore} writes, `[alock-<version>-<slug>]-<sha256>:<id>`.
       # The mutex beside them is not a lock and is skipped. Anything still
-      # under the old `agent-lock:` prefix is skipped too.
+      # under the old `agent-lock:` prefix is counted, never read.
       class RedisIndex
+        # What every key started with before the label named the repository.
+        # The old mutex was `agent-lock-mutex:`, so it does not match.
+        LEGACY_PREFIX = "agent-lock:"
+
         # A lock key. The slug is everything after `alock-v<major>-`
         # up to the closing bracket, which for GitHub is `owner/name`.
         LOCK_KEY = /\A\[(?<label>alock-v\d+-(?<slug>[^\]]+))\]-(?<digest>[0-9a-f]{64}):(?<id>.+)\z/
@@ -49,17 +53,20 @@ module Agent
         def self.open(url = nil) = new(RedisStore.open(url))
 
         # `github.com/kigster/laser-cutter` and `kigster/laser-cutter` are the
-        # same repository. Anything that is not `owner/name` is refused rather
-        # than matched against a prefix of some other slug.
+        # same repository. Any other forge keeps its host, the way
+        # {Tree#redis_slug} writes it: `gitlab.com/kigster/laser-cutter`. A
+        # bare name is refused; the slug is then matched whole, never as a
+        # prefix of some other one.
         #
         # @param text [String]
         # @return [String]
         # @raise [Error]
         def self.normalize_slug(text)
-          slug = text.to_s.strip.sub(%r{\Agithub\.com/}i, "").delete_suffix(".git").delete_suffix("/")
-          return slug if slug.match?(%r{\A[^/]+/[^/]+\z})
+          slug = text.to_s.strip.sub(%r{\Agithub\.com/}i, "").delete_suffix("/").delete_suffix(".git")
+          return slug if slug.match?(%r{\A[^/]+(?:/[^/]+)+\z})
 
-          raise Error, "pass the repository as owner/name, for example kigster/laser-cutter"
+          raise Error, "pass the repository as owner/name, for example kigster/laser-cutter, " \
+                       "or host/owner/name for a forge other than GitHub"
         end
 
         # @param bytes [Integer, nil]
@@ -78,9 +85,10 @@ module Agent
                  .sort_by { |repo| [-repo.count, repo.namespace] }
         end
 
-        # @param slug [String] `owner/name`, or a GitHub URL path
+        # @param slug [String] `owner/name`, a GitHub URL path, or
+        #   `host/owner/name` on another forge
         # @return [Array<Lock>]
-        # @raise [Error] when `slug` is not `owner/name`
+        # @raise [Error] when `slug` is a bare name
         def locks(slug)
           wanted = self.class.normalize_slug(slug)
           pattern = /\Aalock-v\d+-#{Regexp.escape(wanted)}\z/
@@ -88,6 +96,10 @@ module Agent
                  .flat_map { |label, entries| entries.map { |entry| Lock.new(entry[:record], label) } }
                  .sort_by { |lock| [lock.record.scope, lock.record.created_at.to_s] }
         end
+
+        # @return [Integer] keys an older gem wrote under {LEGACY_PREFIX}, which
+        #   this version neither reads nor reaps
+        def legacy_count = client.scan_each(match: "#{LEGACY_PREFIX}*").to_a.uniq.size
 
         # Whether the holder can be checked from this machine, and the answer.
         #

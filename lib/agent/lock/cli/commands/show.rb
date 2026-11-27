@@ -50,6 +50,19 @@ module Agent
             ui.table(rows, header: header)
           end
 
+          # A record is whatever some host sharing this Redis wrote. A newline
+          # in a branch would end the comment and paste as a second command,
+          # and an escape sequence would reach the operator's terminal, so
+          # nothing read from Redis is printed with a control character in it.
+          #
+          # @param text [#to_s]
+          # @return [String] `text` without control characters
+          def printable(text) = text.to_s.gsub(/[[:cntrl:]]/, "")
+
+          # @param text [#to_s]
+          # @return [String] {#printable}, then quoted for a shell
+          def shell(text) = Shellwords.shellescape(printable(text))
+
           # The command that drops this lock. `break`, because `release` only
           # works for the session that holds it. The branch is a comment, so
           # the line still pastes: two branches can hold the same scope.
@@ -57,10 +70,9 @@ module Agent
           # @param record [Record]
           # @return [String]
           def release_command(record)
-            branch = record.branch || "detached"
-            host = record.host && record.host != Socket.gethostname ? " on #{record.host}" : ""
-            "#{program} break --dir #{Shellwords.shellescape(record.tree)} " \
-              "#{Shellwords.shellescape(record.scope)}  # #{branch}#{host}"
+            branch = shell(record.branch || "detached")
+            host = record.host && record.host != Socket.gethostname ? " on #{shell(record.host)}" : ""
+            "#{program} break --dir #{shell(record.tree)} #{shell(record.scope)}  # #{branch}#{host}"
           end
 
           # @param record [Record]
@@ -81,18 +93,39 @@ module Agent
           # @param options [Hash] `:redis_url`
           # @return [void]
           def call(**options)
-            rows = index(options).repos.map { |repo| [repo.namespace, repo.count, Store::RedisIndex.format_bytes(repo.bytes)] }
+            found = index(options)
+            rows = found.repos.map { |repo| row(repo) }
             table(rows, header: %w[Namespace Locks Memory], empty: "No locks in Redis.")
+            warn_legacy(found.legacy_count)
+          end
+
+          private
+
+          # @param repo [Store::RedisIndex::Repo]
+          # @return [Array<String, Integer>]
+          def row(repo) = [printable(repo.namespace), repo.count, Store::RedisIndex.format_bytes(repo.bytes)]
+
+          # Locks an older gem wrote are in no table above and stop nobody.
+          # Saying nothing would let them pass for an empty Redis.
+          #
+          # @param count [Integer]
+          # @return [void]
+          def warn_legacy(count)
+            return if count.zero?
+
+            keys = count == 1 ? "1 key" : "#{count} keys"
+            warn_("#{keys} under the old `#{Store::RedisIndex::LEGACY_PREFIX}` prefix are not read by this version " \
+                  "and block nobody. Delete them once their holders are done.")
           end
         end
 
         # `alock show repo owner/name`.
         class ShowRepo < Show
-          desc "Redis: the locks held on one GitHub repository"
+          desc "Redis: the locks held on one repository"
 
-          argument :repo, required: true, desc: "GitHub repository as owner/name"
+          argument :repo, required: true, desc: "owner/name on GitHub, host/owner/name on any other forge"
 
-          example ["kigster/laser-cutter"]
+          example ["kigster/laser-cutter", "gitlab.com/kigster/laser-cutter"]
 
           # @param repo [String]
           # @param options [Hash] `:redis_url`
@@ -108,7 +141,8 @@ module Agent
           # @param record [Record]
           # @return [Array<String>]
           def row(record)
-            [record.scope, record.agent_id, held_for(record), Store::RedisIndex.alive(record), release_command(record)]
+            [printable(record.scope), printable(record.agent_id), held_for(record),
+             Store::RedisIndex.alive(record), release_command(record)]
           end
         end
       end

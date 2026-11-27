@@ -33,6 +33,14 @@ RSpec.describe Agent::Lock::Store::RedisStore, type: :checkout do
     redis.del(store.mutex_key)
   end
 
+  it "keeps one namespace and one mutex across the minors of a major, so their hosts exclude each other" do
+    major = Agent::Lock::VERSION.split(".").first
+    written = [store.namespace, store.mutex_key]
+    stub_const("Agent::Lock::VERSION", "#{major}.9.1")
+
+    expect([store.namespace, store.mutex_key]).to eq(written)
+  end
+
   it "round-trips a lock through Redis without losing a field" do
     store.create(record)
 

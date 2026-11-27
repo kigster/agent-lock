@@ -31,6 +31,11 @@ RSpec.describe Agent::Lock::Store::RedisIndex, type: :checkout do
       expect(described_class.normalize_slug("github.com/kigster/laser-cutter.git")).to eq("kigster/laser-cutter")
     end
 
+    it "keeps the host of a forge other than GitHub" do
+      expect(described_class.normalize_slug("gitlab.com/kigster/laser-cutter.git"))
+        .to eq("gitlab.com/kigster/laser-cutter")
+    end
+
     it "refuses a name that is not owner/name" do
       expect { described_class.normalize_slug("laser-cutter") }
         .to raise_error(Agent::Lock::Error, %r{owner/name})
@@ -54,6 +59,22 @@ RSpec.describe Agent::Lock::Store::RedisIndex, type: :checkout do
     plant(checkout, "git@github.com:notkigster/laser-cutter.git", "lib/**", "other")
 
     expect(index.locks("kigster/laser-cutter")).to be_empty
+  end
+
+  it "finds a repository on another forge by host/owner/name, and not by owner/name" do
+    plant(checkout, "git@gitlab.com:kigster/laser-cutter.git", "lib/**", "leia")
+
+    aggregate_failures do
+      expect(index.locks("gitlab.com/kigster/laser-cutter").map { |lock| lock.record.agent_id }).to eq(["leia"])
+      expect(index.locks("kigster/laser-cutter")).to be_empty
+    end
+  end
+
+  it "counts the keys an older gem left, without the old mutex" do
+    redis.set("agent-lock:0f3a:lib-1", "old")
+    redis.set("agent-lock-mutex:0f3a", "token")
+
+    expect(index.legacy_count).to eq(1)
   end
 
   it "says unknown for a holder on another machine, and no for a dead pid here" do

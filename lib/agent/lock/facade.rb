@@ -266,10 +266,11 @@ module Agent
 
       # `alock show repo owner/name`. Redis only, same as {#show_repos}.
       #
-      # @param repo [String] `owner/name`, or `github.com/owner/name`
+      # @param repo [String] `owner/name`, `github.com/owner/name`, or
+      #   `host/owner/name` on another forge
       # @param redis_url [String, nil]
       # @return [Array<Store::RedisIndex::Lock>]
-      # @raise [Error] when `repo` is not `owner/name`
+      # @raise [Error] when `repo` is a bare name
       # @raise [Store::Unreachable] when Redis does not answer
       def show_repo(repo, redis_url: nil) = Store::RedisIndex.open(redis_url).locks(repo)
 

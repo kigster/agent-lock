@@ -390,7 +390,7 @@ Only live claims are counted as held. `--json` gives every record its `status` a
 | `break <scope>`            | Take a lock from its holder, even a live one            | nothing is locked there                           |
 | `list` (`ls`)              | Every lock in this repository, live and interrupted     | never                                             |
 | `show repos`               | Redis: repositories, lock counts, and the memory used   | never (exit 2 when Redis does not answer)         |
-| `show repo <owner/name>`   | Redis: that repository's locks, and how to break one    | never (exit 2 when Redis does not answer)         |
+| `show repo <owner/name>`   | Redis: that repository's locks, and how to break one (`host/owner/name` off GitHub) | never (exit 2 when Redis does not answer)         |
 | `mine`                     | Locks held by this session and its sub-agents           | never                                             |
 | `release-all`              | Release all of those                                    | never                                             |
 | `whoami`                   | The id your locks would carry, its parent, their source | never                                             |

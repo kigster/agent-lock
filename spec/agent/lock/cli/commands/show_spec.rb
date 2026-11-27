@@ -46,6 +46,33 @@ RSpec.describe Agent::Lock::CLI::Commands::Show do
     end
   end
 
+  it "prints no control character a record carries, so the break line pastes as one command" do
+    agent_lock("acquire workflow 'cutting' -u #{url}")
+    redis = Redis.new(url: url)
+    key = redis.keys("[[]alock-*").grep_v(/-mutex\z/).first
+    record = Agent::Lock::Record.parse(redis.get(key))
+    redis.set(key, record.with(branch: "main\nrm -rf ~", agent_id: "luke\e[31m").to_markdown)
+
+    command = agent_lock("show repo kigster/laser-cutter -u #{url}")
+
+    aggregate_failures do
+      expect(command.stdout).to include("# mainrm\\ -rf\\ \\~")
+      expect(command.stdout).not_to include("\e[31m")
+      expect(command.stdout.lines.grep(/rm/).size).to eq(1)
+    end
+  end
+
+  it "warns about keys an older gem left under agent-lock:" do
+    Redis.new(url: url).set("agent-lock:0f3a:lib-1", "old")
+
+    command = agent_lock("show repos -u #{url}")
+
+    aggregate_failures do
+      expect(command).to have_exit_status(0)
+      expect(command.stderr).to include("1 key under the old `agent-lock:` prefix")
+    end
+  end
+
   it "says when that repository holds nothing" do
     command = agent_lock("show repo kigster/laser-cutter -u #{url}")
 

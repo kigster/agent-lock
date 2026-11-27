@@ -4,7 +4,7 @@
 
 ### Added
 
-- `alock show repos` and `alock show repo owner/name`, Redis only. `show repos` tables each `alock-v<major>-<owner>/<repo>` with its lock count and the memory those keys use. `show repo` tables that repository's locks: scope, holder, how long held, whether the holder is alive on this machine, and the `alock break` command that drops it. Neither command reads the file store.
+- `alock show repos` and `alock show repo owner/name`, Redis only. `show repos` tables each `alock-v<major>-<owner>/<repo>` with its lock count and the memory those keys use. `show repo` tables that repository's locks: scope, holder, how long held, whether the holder is alive on this machine, and the `alock break` command that drops it. Neither command reads the file store. A repository on another forge is named with its host, `show repo gitlab.com/owner/name`. Control characters in a record are not printed, so a planted branch name cannot split the `break` line into two commands. `show repos` warns on STDERR when keys from an older gem are still under `agent-lock:`.
 
 ### Changed
 
