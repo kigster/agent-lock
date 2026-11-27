@@ -41,6 +41,22 @@ RSpec.describe Agent::Lock::Store::RedisStore, type: :checkout do
     expect([store.namespace, store.mutex_key]).to eq(written)
   end
 
+  it "describes itself without the password its URL carries" do
+    named = described_class.new(tree, client: redis, url: "redis://rey:s3cretpw@127.0.0.1:6379/15")
+
+    expect(named.describe).to start_with("redis redis://***@127.0.0.1:6379/15 ")
+  end
+
+  it "keeps the password out of the error for a mutex it could not take" do
+    named = described_class.new(tree, client: redis, url: "redis://rey:s3cretpw@127.0.0.1:6379/15")
+    redis.set(named.mutex_key, "someone-else")
+    allow(named).to receive(:mutex_timeout).and_return(0.01)
+
+    expect { named.synchronize { :never } }.to raise_error(Agent::Lock::Error) { |error|
+      expect(error.message).to include(" in redis://***@127.0.0.1:6379/15,")
+    }
+  end
+
   it "round-trips a lock through Redis without losing a field" do
     store.create(record)
 

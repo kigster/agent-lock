@@ -32,7 +32,8 @@ module Agent
 
         # @param strategies [Array<String, Symbol>] see {Strategies.parse}
         # @param redis_url [String]
-        # @raise [ArgumentError] when a strategy name is unknown, or the list is empty
+        # @raise [ArgumentError] when a strategy name is unknown, the list is
+        #   empty, or `redis_url` is tried and is not a Redis URL
         # @raise [RedisUnavailableError] when Redis was required and did not answer
         def initialize(strategies:, redis_url:)
           @redis_url = redis_url
@@ -75,20 +76,32 @@ module Agent
             return ["redis", client] if client
           end
 
-          raise RedisUnavailableError, "Redis did not answer on #{redis_url}"
+          raise RedisUnavailableError, "Redis did not answer on #{masked_url}"
         end
+
+        # An exception message is logged by whoever rescues it, and a Redis
+        # URL may carry a password.
+        #
+        # @return [String] the URL with any userinfo replaced by `***`
+        def masked_url = Store::RedisStore.safe(redis_url)
 
         # Probes with a short-timeout client, then hands back one with the
         # gem's default timeouts: the probe's 0.2s would otherwise apply to
         # every lock operation on a slow, remote Redis.
         #
+        # redis-rb and URI quote the whole URL, password included, when they
+        # cannot read it, so that error is raised again without it.
+        #
         # @return [::Redis, nil] a working client once Redis answered, or nil
+        # @raise [ArgumentError] when the URL is not one redis-rb can read
         def connect
           probe = ::Redis.new(url: redis_url, timeout: PROBE_TIMEOUT, connect_timeout: PROBE_TIMEOUT)
           probe.ping
           ::Redis.new(url: redis_url)
         rescue ::Redis::BaseError, SystemCallError, SocketError
           nil
+        rescue ArgumentError, URI::InvalidURIError
+          raise ArgumentError, "not a Redis URL: #{masked_url}"
         ensure
           close_quietly(probe)
         end

@@ -100,6 +100,14 @@ RSpec.describe Agent::Lock::CLI::Commands::TreeCommand do
       end
     end
 
+    it "never prints a password that was not percent-encoded, whatever it holds" do
+      ["s3cret pw", "s3/cretpw", "s3@cretpw"].each do |password|
+        command = agent_lock("acquire workflow -u 'redis://rey:#{password}@127.0.0.1:1/15'")
+
+        expect(command.output).to include("redis://***@127.0.0.1:1/15").and(satisfy { |text| !text.include?("s3") })
+      end
+    end
+
     it "never prints the password of the URL it could not use" do
       command = agent_lock("acquire workflow -u redis://rey:s3cretpw@127.0.0.1:1/15")
 
