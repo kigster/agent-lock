@@ -113,6 +113,67 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
       expect { facade.acquire("workflow/**", dir: checkout, agent_id: "rey-frontend") }
         .to raise_error(Agent::Lock::Refused, /INTERRUPTED WORK/)
     end
+
+    context "with a block" do
+      it "yields the result, returns the block's value, and releases" do
+        yielded = nil
+        value = facade.acquire("workflow/**", "billing", dir: checkout) do |lock|
+          yielded = lock.status
+          :done
+        end
+
+        expect([value, yielded]).to eq(%i[done acquired])
+        expect(facade.check("workflow/**", dir: checkout).status).to eq(:free)
+      end
+
+      it "releases when the block raises, then lets the exception out" do
+        expect { facade.acquire("workflow/**", dir: checkout) { raise "boom" } }
+          .to raise_error(RuntimeError, "boom")
+        expect(facade.check("workflow/**", dir: checkout).status).to eq(:free)
+      end
+
+      it "does not enter the block when the acquire is refused" do
+        facade.acquire("workflow/**", dir: checkout)
+        yielded = false
+
+        expect { facade.acquire("workflow/**", dir: checkout, agent_id: "rey-frontend") { yielded = true } }
+          .to raise_error(Agent::Lock::Refused)
+        expect(yielded).to be(false)
+      end
+
+      it "lets the block's own exception out when its lock was broken and retaken meanwhile" do
+        expect do
+          facade.acquire("workflow/**", dir: checkout) do
+            facade.break_lock("workflow/**", dir: checkout)
+            facade.acquire("workflow/**", dir: checkout, agent_id: "rey-frontend")
+            raise ArgumentError, "the caller's own bug"
+          end
+        end.to raise_error(ArgumentError, "the caller's own bug")
+      end
+
+      it "raises the refused release when the block finished and its lock was retaken" do
+        expect do
+          facade.acquire("workflow/**", dir: checkout) do
+            facade.break_lock("workflow/**", dir: checkout)
+            facade.acquire("workflow/**", dir: checkout, agent_id: "rey-frontend")
+          end
+        end.to raise_error(Agent::Lock::Refused, /rey-frontend/)
+      end
+
+      it "releases when the block leaves by throw" do
+        catch(:out) { facade.acquire("workflow/**", dir: checkout) { throw :out } }
+
+        expect(facade.check("workflow/**", dir: checkout).status).to eq(:free)
+      end
+
+      it "leaves a lock this identity already held" do
+        facade.acquire("workflow/**", dir: checkout)
+
+        facade.acquire("workflow/lib/cli.rb", dir: checkout) { :inner }
+
+        expect(facade.check("workflow/**", dir: checkout).status).to eq(:mine)
+      end
+    end
   end
 
   describe "#release" do

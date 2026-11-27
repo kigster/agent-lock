@@ -22,4 +22,7 @@ group :development, :test do
   # is what the Launcher's injected streams are for.
   gem "aruba", "~> 2.3"
   gem "coverage-badge"
+
+  # Facade.new(async: true) needs it; the gem itself does not depend on it.
+  gem "concurrent-ruby", ">= 1.1", "< 2"
 end

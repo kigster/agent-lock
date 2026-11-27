@@ -1,0 +1,23 @@
+# Gitleaks configuration. Extends the built-in ruleset; does not replace it.
+# Docs: https://github.com/gitleaks/gitleaks
+#
+# Read by the pre-commit hook in lefthook.yml.
+
+title = "agent-lock gitleaks config"
+
+[extend]
+# Inherit gitleaks' default rules and only add the allowlists below.
+useDefault = true
+
+[[allowlists]]
+description = "Example env files and committed spec fixtures (never real secrets)"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)spec/fixtures/.*''',
+]
+
+[[allowlists]]
+description = "Obvious non-secret placeholders"
+regexes = [
+  '''(?i)\b(localhost|example\.com|changeme|placeholder|dummy|xxxx+)\b''',
+]
