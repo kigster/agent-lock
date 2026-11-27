@@ -4,13 +4,12 @@ require "fileutils"
 require "simplecov"
 require "coverage/badge"
 
-# The badge belongs to the repository, not to the gem whose suite produces it,
-# and the suite runs from workflow/. Anchoring on __dir__ rather than on the
-# working directory keeps it landing in the one docs/badges the README reads.
+# The README reads the badge from docs/badges. Anchoring on __dir__ rather
+# than on the working directory keeps it landing there wherever rspec runs.
 #
-# The directory is made up front because the move happens in `at_exit`, and
-# without it the whole suite dies there — which reports as a passing run
-# followed by a stack trace.
+# The badge is committed, so it is rewritten only under COVERAGE=true
+# (`just test-coverage`): writing it on every run left the checkout dirty
+# after any `rspec`, a one-file run's partial figure included.
 REPO_ROOT = File.expand_path("../", __dir__)
 BADGE_DIR = File.join(REPO_ROOT, "docs", "badges")
 
@@ -46,7 +45,11 @@ end
 SimpleCov.at_exit do
   SimpleCov.result.format!
   # rubocop: disable-next RSpec/Output
-  puts "Coverage: #{SimpleCov.result.covered_percent.round(2)}%, saving into #{BADGE_DIR}/coverage_badge.svg"
+  puts "Coverage: #{SimpleCov.result.covered_percent.round(2)}%"
+  next unless ENV["COVERAGE"] == "true"
+
+  # rubocop: disable-next RSpec/Output
+  puts "Saving the badge into #{BADGE_DIR}/coverage_badge.svg"
   FileUtils.mkdir_p(BADGE_DIR)
   FileUtils.mv("coverage/badge.svg", File.join(BADGE_DIR, "coverage_badge.svg"))
 end
