@@ -1,70 +1,23 @@
-# Gitleaks configuration — EXTENDS the built-in ruleset (does not replace it).
+# Gitleaks configuration. Extends the built-in ruleset; does not replace it.
 # Docs: https://github.com/gitleaks/gitleaks
 #
-# Used by both the local pre-commit hook (lefthook.yml) and the gitleaks CI job,
-# so local and CI behavior match.
+# Read by the pre-commit hook in lefthook.yml.
 
-title = "Archive gitleaks config"
+title = "agent-lock gitleaks config"
 
 [extend]
-# Inherit gitleaks' default rules (AWS, OpenAI, Stripe, generic high-entropy, etc.)
-# and only ADD the allowlists below. Do not set a custom `path` alongside useDefault.
+# Inherit gitleaks' default rules and only add the allowlists below.
 useDefault = true
 
-# Global allowlists apply to every rule. Array-of-tables syntax (gitleaks v8.25+).
 [[allowlists]]
-description = "Example/sample env files and committed fixtures (never real secrets)"
+description = "Example env files and committed spec fixtures (never real secrets)"
 paths = [
   '''(^|/)\.env\.example$''',
-  '''(^|/)\.env\.sample$''',
-  '''.*\.example\.(env|yml|yaml|json|toml)$''',
   '''(^|/)spec/fixtures/.*''',
-  '''(^|/)spec/.*/fixtures/.*''',
-  '''(^|/)__fixtures__/.*''',
-  # detect-secrets baseline: stores only one-way `hashed_secret` digests + metadata,
-  # never cleartext. gitleaks' generic-high-entropy rule otherwise flags every hash
-  # as a secret. The two scanners share no config, so gitleaks needs this explicitly.
-  '''(^|/)\.secrets\.baseline$''',
-  # SOPS-encrypted secrets (managed by sopsy — see the justfile): every value is an
-  # ENC[AES256_GCM,...] ciphertext blob, which the generic high-entropy rule would
-  # otherwise flag. Ciphertext is safe to commit; that is the point of the file.
-  '''(^|/)\.env\.encrypted$''',
-  # Committed, non-secret shared dev config (the plaintext counterpart of
-  # .env.encrypted). Holds only local-dev defaults (e.g. the local postgres
-  # password); anything sensitive belongs in .env.encrypted instead.
-  '''(^|/)\.env\.shared$''',
-  '''(^|/)\.claude/worktrees''',
-  '''(^|/)\.github/workflows''',
-  '''(^|/)\.plans/*$''',
-  '''(^|/)\.rails/tmp/cache/bootsnap/*''',  
-  '''(^|/)\.frontend/.next/dev/cache/frontend/.next/dev/cache*''',
 ]
 
 [[allowlists]]
 description = "Obvious non-secret placeholders"
 regexes = [
-  '''(?i)\b(localhost|example\.com|changeme|placeholder|your[-_ ]?(api[-_ ]?)?key[-_ ]?here|dummy|xxxx+|\.\.\.\.)\b''',
+  '''(?i)\b(localhost|example\.com|changeme|placeholder|dummy|xxxx+)\b''',
 ]
-
-[[allowlists]]
-# Plaid's PUBLIC OpenAPI specification, vendored verbatim as the pinned source
-# of truth for plaid.* vocabulary generation (spec 031 PR-1; provenance in
-# rails/vendor/plaid/openapi/PIN.md). Its request/response examples carry
-# sample access_tokens/secrets/URL keys that are documentation constants from
-# Plaid's public GitHub repo, not credentials. Path-scoped rather than
-# .gitleaksignore fingerprints because every re-pin via plaid:spec_drift_check
-# shifts line numbers and would silently invalidate fingerprint entries.
-description = "Vendored public Plaid OpenAPI spec (documentation examples, not credentials)"
-paths = ['''(^|/)rails/vendor/plaid/openapi/.*''']
-
-[[allowlists]]
-# Svix's PUBLIC webhook-verification reference vector (docs.svix.com — the
-# canonical worked example carried in every svix client library's test suite).
-# It is a documentation constant, NOT a real credential; ClerkWebhookVerifier's
-# spec uses it to prove byte-compatibility with Svix's own signer. condition =
-# "AND" scopes this to exactly that one string in exactly that one spec file, so
-# it can never mask a real secret anywhere else.
-description = "Svix public reference vector in ClerkWebhookVerifier spec (not a real secret)"
-condition = "AND"
-paths = ['''(^|/)spec/services/identity/clerk_webhook_verifier_spec\.rb$''']
-regexes = ['''MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw''']
