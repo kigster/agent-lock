@@ -141,6 +141,31 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
         expect(yielded).to be(false)
       end
 
+      it "lets the block's own exception out when its lock was broken and retaken meanwhile" do
+        expect do
+          facade.acquire("workflow/**", dir: checkout) do
+            facade.break_lock("workflow/**", dir: checkout)
+            facade.acquire("workflow/**", dir: checkout, agent_id: "rey-frontend")
+            raise ArgumentError, "the caller's own bug"
+          end
+        end.to raise_error(ArgumentError, "the caller's own bug")
+      end
+
+      it "raises the refused release when the block finished and its lock was retaken" do
+        expect do
+          facade.acquire("workflow/**", dir: checkout) do
+            facade.break_lock("workflow/**", dir: checkout)
+            facade.acquire("workflow/**", dir: checkout, agent_id: "rey-frontend")
+          end
+        end.to raise_error(Agent::Lock::Refused, /rey-frontend/)
+      end
+
+      it "releases when the block leaves by throw" do
+        catch(:out) { facade.acquire("workflow/**", dir: checkout) { throw :out } }
+
+        expect(facade.check("workflow/**", dir: checkout).status).to eq(:free)
+      end
+
       it "leaves a lock this identity already held" do
         facade.acquire("workflow/**", dir: checkout)
 

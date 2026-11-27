@@ -2,7 +2,6 @@ PATH
   remote: .
   specs:
     agent-lock (4.0.0)
-      concurrent-ruby (~> 1.3.8)
       dry-cli (~> 1.4)
       dry-cli-autocomplete (~> 0.6)
       dry-cli-help (~> 0.6)
@@ -223,6 +222,7 @@ PLATFORMS
 DEPENDENCIES
   agent-lock!
   aruba (~> 2.3)
+  concurrent-ruby (>= 1.1, < 2)
   coverage-badge
   irb
   rake (~> 13.0)

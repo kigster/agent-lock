@@ -17,10 +17,10 @@ Gem::Specification.new do |spec|
                      "(shared across machines) or in a file store inside .git, keyed by repository and " \
                      "branch. Identity comes from the agent session, crashed holders are reaped or " \
                      "orphaned with their notes, and macOS can freeze files outright with --enforce. " \
-                     "Used by OpenLanes to keep concurrent agents from overwriting each other. Finally, " \
-                     "since version 4.0, all CLI commands are available as Ruby API with some additional " \
-                     "benefits such as block usage of acquire(), ability to use multiple lockers, and " \
-                     "use the distributed backend in async mode using concurrent_ruby's Async module."
+                     "Used by OpenLanes to keep concurrent agents from overwriting each other. Since 4.0 " \
+                     "every command is also a Ruby method on Agent::Lock::Facade, with a block form of " \
+                     "acquire that releases afterwards, and an opt-in async mode that returns futures " \
+                     "(it needs the concurrent-ruby gem)."
 
   spec.homepage = "https://github.com/kigster/agent-lock"
   spec.license = "MIT"
@@ -46,7 +46,6 @@ Gem::Specification.new do |spec|
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "concurrent-ruby", "~> 1.3.8"
   spec.add_dependency "dry-cli", "~> 1.4"
   spec.add_dependency "dry-cli-autocomplete", "~> 0.6"
   spec.add_dependency "dry-cli-help", "~> 0.6"

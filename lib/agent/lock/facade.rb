@@ -4,6 +4,7 @@ require_relative "facade/backend"
 require_relative "facade/session"
 require_relative "facade/refusal"
 require_relative "facade/memo"
+require_relative "facade/async"
 
 module Agent
   # {Facade} and the process-wide facades {.local} and {.distributed}.
@@ -40,11 +41,12 @@ module Agent
     # {Store::Mismatch} in one already claimed for the other, so a facade
     # and the CLI can never take the same scope in two stores.
     #
-    # `async: true` mixes {Concurrent::Async} into that facade alone. Direct
-    # calls stay synchronous. `locker.async.acquire(scope, intent)` returns a
-    # {Concurrent::IVar}: `value` is the result, or nil when the call raised
-    # (`reason` holds it, `value!` re-raises). The proxy takes positional
-    # arguments only, so set `agent_id:` on the facade and call from the checkout.
+    # `async: true` adds {#async}, which runs any lock method on
+    # concurrent-ruby's I/O pool and returns a `Concurrent::Promises::Future`:
+    # `value!` is the result or re-raises, `value` is nil when the call raised
+    # and `reason` holds why. Arguments, keywords and blocks pass through as
+    # on a direct call, and direct calls stay synchronous. concurrent-ruby is
+    # not a dependency of this gem; add it to the Gemfile to use this.
     #
     # @example File store, signed by a sub-agent
     #   locks = Agent::Lock.local
@@ -68,10 +70,10 @@ module Agent
       # @param agent_id [String, nil] signs locks when a call does not name its own
       # @param parent_id [String, nil] that holder's parent, likewise
       # @param stale_minutes [Integer, nil] nil reads `AGENT_LOCK_STALE_MINUTES`
-      # @param async [Boolean] mix {Concurrent::Async} into this instance.
-      #   `locker.async.acquire` returns a {Concurrent::IVar}; see the class note
+      # @param async [Boolean] offer {#async}; needs the concurrent-ruby gem
       # @raise [RedisUnavailableError] when no strategy but `redis` is left and it does not answer
       # @raise [ArgumentError] when `strategies` is empty or names an unknown backend
+      # @raise [LoadError] when `async` is true and concurrent-ruby is not installed
       # rubocop:disable-next Metrics/ParameterLists
       def initialize(strategies: DEFAULT_STRATEGIES,
                      redis_url: nil,
@@ -81,7 +83,7 @@ module Agent
                      async: false)
         @backend = Backend.new(strategies:, redis_url: redis_url || ENV.fetch("REDIS_URL", DEFAULT_REDIS_URL))
         @session = Session.new(@backend, agent_id:, parent_id:, stale_minutes:)
-        become_async if async
+        @async = async ? Async.tap(&:load!).new(self) : nil
         freeze
       end
 
@@ -91,13 +93,28 @@ module Agent
       # @return [String] the Redis URL this facade was given, used or not
       def redis_url = @backend.redis_url
 
+      # The lock methods again, each returning a future instead of waiting.
+      #
+      # @example
+      #   locks = Agent::Lock::Facade.new(strategies: %w[file], async: true)
+      #   future = locks.async.acquire("lib/**", "rewriting billing", agent_id: "luke-backend")
+      #   future.value!.status # => :acquired
+      #
+      # @return [Async]
+      # @raise [ArgumentError] when the facade was built without `async: true`
+      def async = @async || raise(ArgumentError, "build the facade with async: true to call #async")
+
       # `alock acquire`: claim a scope before writing in it.
       #
       # With a block, yields the {Manager::Result} and returns the block's
       # value. The lock is released afterwards only when this call took it
       # (`:acquired`). `:already_mine` yields and leaves the lock you already
       # held, so a nested block does not drop the outer one. A refusal raises
-      # before the block runs. An exception from the block releases, then propagates.
+      # before the block runs. An exception from the block releases, then
+      # propagates. When that release is itself refused (somebody broke the
+      # lock and took the scope while the block ran), the block's exception
+      # still wins: replacing it with the release's {Refused} hid the bug
+      # the caller actually had.
       #
       # @param scope [String] a path, a directory, or a glob such as `lib/**`
       # @param intent [String, nil] what the holder is about to do
@@ -116,10 +133,9 @@ module Agent
           scope:
         )
         return result unless block_given?
+        return yield(result) unless result.status == :acquired
 
-        yield result
-      ensure
-        release(scope, **session) if block_given? && result&.status == :acquired
+        within(scope, session) { yield result }
       end
 
       # `alock release`.
@@ -215,16 +231,25 @@ module Agent
 
       private
 
-      # Extend this instance, then initialize, then freeze. Including
-      # {Concurrent::Async} on the class initializes after `freeze` and
-      # raises FrozenError. Loaded only here, so the CLI never requires it.
+      # Run the block of an {#acquire} that took the lock, then release it.
+      # `ensure`, so a `break`, `throw` or exception still releases. Only a
+      # block that finished lets a refused release raise; otherwise the
+      # refusal is swallowed and whatever was unwinding carries on.
       #
-      # @return [void]
-      def become_async
-        require "concurrent/async"
-        extend Concurrent::Async
-
-        init_synchronization
+      # @param scope [String]
+      # @param session [Hash]
+      # @return [Object] the block's value
+      def within(scope, session)
+        finished = false
+        value = yield
+        finished = true
+        value
+      ensure
+        begin
+          release(scope, **session)
+        rescue Refused
+          raise if finished
+        end
       end
     end
 
@@ -256,10 +281,12 @@ module Agent
       # @param agent_id [String, nil] see {Facade#initialize}
       # @param parent_id [String, nil] see {Facade#initialize}
       # @param stale_minutes [Integer, nil] see {Facade#initialize}
+      # @param async [Boolean] see {Facade#initialize}
       # @return [Facade]
+      # rubocop:disable-next Metrics/ParameterLists
       def facade(strategies: Facade::DEFAULT_STRATEGIES, redis_url: nil, agent_id: nil, parent_id: nil,
-                 stale_minutes: nil)
-        Facade.new(strategies:, redis_url:, agent_id:, parent_id:, stale_minutes:)
+                 stale_minutes: nil, async: false)
+        Facade.new(strategies:, redis_url:, agent_id:, parent_id:, stale_minutes:, async:)
       end
 
       # Forget {.local} and {.distributed}, so the next call builds each anew.
