@@ -17,10 +17,29 @@ module Agent
       # line, so guessing it wrong is not a cosmetic mistake.
       PROGRAM_NAME = "alock"
 
+      # Colours the help text. Pastel honours NO_COLOR and a non-terminal
+      # stdout, so piped help and the specs read plain text.
       COLORS = Pastel.new
 
-      TOP_LINE    = "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
-      BOTTOM_LINE = "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+      # The name in the left cell of the help's title box.
+      TITLE = "    Agent/Lock — Distributed Advisory Locker"
+
+      # Inner widths of the title box's two cells. The version is padded to
+      # the right one rather than spaced by hand, so 4.10.0 still closes the box.
+      TITLE_CELLS = [45, 33].freeze
+
+      # The three lines `alock -h` opens with: the gem's name and its version, boxed.
+      #
+      # @param version [String]
+      # @return [String]
+      def self.title_box(version = Agent::Lock::VERSION)
+        left, right = TITLE_CELLS
+        rule = ->(open, middle, close) { "#{open}#{"━" * left}#{middle}#{"━" * right}#{close}" }
+        name = COLORS.yellow(TITLE.ljust(left))
+        release = COLORS.green.bold(" Version #{version}".ljust(right))
+
+        [rule.call("┏", "┳", "┓"), "┃#{name}┃#{release}┃", rule.call("┗", "┻", "┛")].join("\n")
+      end
       # The column dry-cli-help wraps at, rather than the terminal's width,
       # so help reads the same in a wide terminal, a narrow one, and a log.
       HELP_WIDTH = 85
@@ -38,8 +57,8 @@ module Agent
         name your locks would carry.
 
         Backends: Redis when one answers on env REDIS_URL (shared across machines),
-        or localhost:6379 (local only). Otherwise a file store inside .git (also local#{" "}
-        only). The first process in a checkout records the choice; setting environment
+        or localhost:6379 (local only). Otherwise a file store inside .git (also
+        local only). The first process in a checkout records the choice; setting environment
         variable #{COLORS.blue("AGENT_LOCK_BACKEND=redis|file")} overrides it.
 
         Exit codes: 0 done, 1 refused or held by someone else, 2 could not run.
@@ -51,7 +70,7 @@ module Agent
 
       Dry::CLI::Help.configure do
         styles { heading :bold, :magenta }
-        title "\n#{TOP_LINE}\n#{COLORS.yellow("┃    Agent/Lock — Distributed Advisory Locker")} ┃ #{COLORS.green.bold("Version #{Agent::Lock::VERSION}")}                   ┃\n#{BOTTOM_LINE}"
+        title "\n#{CLI.title_box}"
         description DESCRIPTION
         epilogue "Documentation: #{COLORS.cyan.bold.underline("https://github.com/kigster/agent-lock")}"
         width HELP_WIDTH

@@ -504,7 +504,16 @@ RSpec.describe Agent::Lock::CLI do
         expect(output).to include("Version #{Agent::Lock::VERSION}")
         expect(output).to include("Advisory locks for AI coding agents")
         expect(output).to match(/^  acquire\s+Claim a path or glob/)
+        expect(output.lines.map { |line| line.chomp.gsub(/\e\[[\d;]*m/, "").length }.max)
+          .to be <= Agent::Lock::CLI::HELP_WIDTH
       end
+    end
+
+    it "closes the help's title box whatever the version's length" do
+      box = described_class.title_box("4.10.0").lines.map(&:chomp)
+
+      expect(box.map(&:length).uniq).to eq([box.first.length])
+      expect(box[1]).to include("Version 4.10.0")
     end
 
     it "prints a command's own usage with its arguments" do
