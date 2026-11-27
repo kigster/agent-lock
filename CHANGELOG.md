@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `holder:` on `Facade.new` and `Agent::Lock.facade`. `:process`, the default, ties a lock's liveness to the Ruby process holding the facade; `:session` keeps `alock`'s first-non-shell-ancestor rule.
+
+### Changed
+
+- A facade's locks are tied to its own process by default. Before, liveness was checked against the host's first non-shell ancestor, which outlives a crashed host, so its locks were never reaped.
+
+### Fixed
+
+- Concurrent `note` calls on one lock no longer lose notes: `note`, `release`, `break`, `release-all` and the reaping before `check`, `list` and `mine` now run inside the store mutex, as `acquire` and `resume` already did.
+- A backend marker that exists but cannot be read raises `Store::Mismatch` naming the read error, instead of being reported as empty.
+
 ## [4.1.0] - 2026-11-25
 
 ### Added
