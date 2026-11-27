@@ -89,7 +89,7 @@ module Agent
         # Anything else used to fall through to the `ensure` with `code`
         # still 0: an `acquire` that died on a malformed Redis URL printed
         # nothing and exited 0, which an agent reads as "I hold it".
-        stderr.puts(bold(red("ERROR: #{program}: #{e.class}: #{Store::RedisStore.safe(e.message)}")))
+        stderr.puts(bold(red("ERROR: #{program}: #{e.class}: #{Store::RedisStore.scrub(e.message)}")))
         code = 2
       rescue Interrupt
         stderr.puts(bold(yellow("WARNING: #{program}: interrupted")))

@@ -68,11 +68,11 @@ module Agent
             @client = client
           end
 
-          raise "no functional Redis client could be created for #{self.url}" unless @client
+          raise "no functional Redis client could be created for #{self.class.safe(self.url)}" unless @client
         end
 
-        # @return [String]
-        def describe = "redis #{url} (#{namespace})"
+        # @return [String] the store by name, its URL without any password
+        def describe = "redis #{self.class.safe(url)} (#{namespace})"
 
         # SCAN rather than KEYS: this runs on whatever Redis the machine
         # already has, which may be somebody's shared development instance,
@@ -219,7 +219,8 @@ module Agent
           until client.set(mutex_key, token, nx: true, px: MUTEX_LEASE_MS)
             if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
               raise Error, format("timed out after %<timeout>gs waiting for %<key>s in %<url>s, " \
-                                  "which another process claiming a lock is holding", timeout:, key: mutex_key, url:)
+                                  "which another process claiming a lock is holding",
+                                  timeout:, key: mutex_key, url: self.class.safe(url))
             end
 
             sleep(delay * rand(0.5..1.0))
@@ -307,11 +308,21 @@ module Agent
           end
 
           # A URL fit to print: an error lands in transcripts and logs, and
-          # a Redis URL may carry a password.
+          # a Redis URL may carry a password. Everything up to the last `@`
+          # goes, because a password that was never percent-encoded may hold
+          # a space, a `/` or an `@` of its own.
           #
-          # @param url [String]
+          # @param url [String] one URL, and nothing else
           # @return [String] `url` with any userinfo replaced by `***`
-          def safe(url) = url.to_s.gsub(%r{(?<=://)[^/@\s]*@}, "***@")
+          def safe(url) = url.to_s.sub(%r{(?<=://).*@}m, "***@")
+
+          # The same for a sentence that may quote URLs: the last net under
+          # an error somebody else worded. It cannot tell where an unencoded
+          # password ends, so a URL this gem prints itself goes through {.safe}.
+          #
+          # @param text [String]
+          # @return [String] `text` with the userinfo of each URL replaced by `***`
+          def scrub(text) = text.to_s.gsub(%r{(?<=://)[^/@\s]*@}, "***@")
 
           # @return [String] `v4` from `4.0.3`. Every minor and patch of a
           #   major reads and writes one namespace; a new major starts another.

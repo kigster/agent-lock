@@ -55,6 +55,23 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
         .to raise_error(Agent::Lock::RedisUnavailableError, /127\.0\.0\.1:1/)
     end
 
+    it "keeps the URL's password out of the error for a Redis that does not answer" do
+      expect { described_class.new(strategies: %w[redis], redis_url: "redis://rey:s3cretpw@127.0.0.1:1/15") }
+        .to raise_error(Agent::Lock::RedisUnavailableError) { |error|
+          expect(error.message).to eq("Redis did not answer on redis://***@127.0.0.1:1/15")
+        }
+    end
+
+    it "keeps the password out of the error for a URL that is not a Redis URL" do
+      messages = ["http://rey:s3cretpw@127.0.0.1/15", "redis://rey:s3cret pw@127.0.0.1/15"].map do |url|
+        described_class.new(strategies: %w[redis], redis_url: url)
+      rescue ArgumentError => e
+        e.message
+      end
+
+      expect(messages).to eq(["not a Redis URL: http://***@127.0.0.1/15", "not a Redis URL: redis://***@127.0.0.1/15"])
+    end
+
     it "rejects an unknown strategy" do
       expect { described_class.new(strategies: %w[postgres]) }
         .to raise_error(ArgumentError, /postgres/)
