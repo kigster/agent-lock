@@ -114,9 +114,8 @@ module Agent
         # redis-rb and URI quote the whole URL, password included, when they
         # cannot read it. That error is raised again without the URL, and
         # without a `cause`, which would carry the original message into
-        # every backtrace and error reporter.
+        # every backtrace and error reporter. Keywords go to `::Redis.new`.
         #
-        # @param options [Hash] passed to `::Redis.new`
         # @return [::Redis]
         # @raise [ArgumentError] when the URL is not one redis-rb can read
         def client(**)
