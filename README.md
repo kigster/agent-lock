@@ -15,7 +15,7 @@
 >
 > 
 
-This is a Ruby Gem that provides both a CLI utility `alock` that supports advisory locks on files and folders with pluggable backends (**redis** and **file system** provided out of the box, with **redis** being the default if it's available locally or if `$REDIS_URL` is set and points to a working Redis), and a Ruby API to the same commands.
+This is a Ruby Gem that provides both a CLI utility `alock` that supports advisory locks on files and folders with pluggable backends (**redis** and **file system** provided out of the box, with **redis** being the default if it's available locally or if `$REDIS_URL` is set and points to a working Redis), and a Ruby API to the same commands. The two are one locker: a Ruby process and the `alock` calls of the agents it starts see, block and release each other's locks. See [A Ruby dispatcher and its `alock` agents](#a-ruby-dispatcher-and-its-alock-agents).
 
 > [!NOTE]
 >
@@ -24,7 +24,7 @@ This is a Ruby Gem that provides both a CLI utility `alock` that supports adviso
 This locking tool is meant for coding agents that share a project, whether they run on one machine or on several: with every machine pointed at one Redis, it is a distributed lock.
 
 > [!NOTE]
-> [OpenLanes](https://github.com/kigster/openlanes) uses `agent-lock` to keep the agents it runs from overwriting each other, but the gem has no dependency on it. Any harness, or a person with three terminals open, can use `alock` on its own.
+> [OpenLanes](https://github.com/kigster/openlanes) uses `agent-lock` to keep the agents it runs from overwriting each other: its dispatcher locks through the Ruby API, and the agents it launches lock with `alock`. The gem has no dependency on it. Any harness, or a person with three terminals open, can use `alock` on its own.
 
 ## What it is
 
@@ -38,7 +38,7 @@ Git does not help here. Two agents on one branch and one working tree never prod
 
 - **Orchestrators that fan out sub-agents** into one worktree, each taking a different part of it.
 
-- **Harnesses** that launch agents over a repository and need them to stay out of each other's way.
+- **Harnesses** that launch agents over a repository and need them to stay out of each other's way. A harness written in Ruby locks in-process and hands its agents the same store: see [A Ruby dispatcher and its `alock` agents](#a-ruby-dispatcher-and-its-alock-agents).
 
 - **Teams of agents spread over several machines**, each with its own clone of the repository, at any path. Set `REDIS_URL` to the same shared Redis on every machine, and a claim on one is refused on the others. See [One repository, many machines](#one-repository-many-machines).
 
@@ -150,11 +150,28 @@ The same commands that are available when you run `alock -h` become methods on a
 
 #### Types of Locks
 
-There are three types of Ruby API locks you can use, and each is an instance of the class `Agent::Lock::Facade`:
+There are four ways to get a locker, and each is an instance of the class `Agent::Lock::Facade`:
 
 1. A default version of a local file-system based lock that works great for a single repository work on multiple agents on a single machine. It can be lazy loaded by calling `Agent::Lock.local`
 2. A default version of a distributed lock can be obtained by calling `Agent::Lock.distributed`. It lazily builds a Redis-backed locker, one per URL, from `redis_url:` when given (`Agent::Lock.distributed(redis_url: url)`), else `$AGENT_LOCK_REDIS_URL`, else `$REDIS_URL` (default `redis://localhost:6379`), and raises `Agent::Lock::RedisUnavailableError` when that Redis does not answer.
-3. And of course you can create any number of `Agent::Lock::Facade` instances by calling its constructor: `@locker = Agent::Lock::Facade.new(*args, **opts)` (see examples below).
+3. `Agent::Lock.facade(**opts)` builds a fresh locker that prefers Redis and falls back to the file store, as `alock` does by default.
+4. And of course you can create any number of `Agent::Lock::Facade` instances by calling its constructor: `@locker = Agent::Lock::Facade.new(**opts)`.
+
+`Facade.new` and `Agent::Lock.facade` take the same options:
+
+| Option           | Default           | Does                                                                                                   |
+| :--------------- | :---------------- | :----------------------------------------------------------------------------------------------------- |
+| `strategies:`    | `%w[redis file]`  | Stores to try, in order. `filesystem` is another name for `file`                                       |
+| `redis_url:`     | see below         | The Redis to use: this, else `$AGENT_LOCK_REDIS_URL`, else `$REDIS_URL`, else `redis://localhost:6379` |
+| `async:`         | `false`           | Adds `#async`, see [Async](#async)                                                                     |
+| `holder:`        | `:process`        | What a lock's liveness is tied to: this Ruby process, or `:session` for `alock`'s rule                 |
+| `session_name:`  | none              | Names the session; its locks are tied to no process and survive restarts                               |
+| `agent_id:`      | the session's id  | The holder a call signs as, when the call names none                                                   |
+| `parent_id:`     | inferred          | That holder's parent. `false` means it has none                                                        |
+| `dir:`           | `Dir.pwd`         | The checkout whose locks a call reads, when the call names none                                        |
+| `stale_minutes:` | `120`             | When a quiet lock counts as stale                                                                      |
+
+A list that is only `redis` raises `Agent::Lock::RedisUnavailableError` (a `RuntimeError`) at construction when that URL does not answer.
 
 #### Examples
 
@@ -209,8 +226,7 @@ locker.async.release("lib/billing/**", agent_id: "backend-agent").wait
 Wait on every future whose outcome matters, a `release` above all: a future still running when the process exits can be dropped, and the lock then lives until it is reaped.
 
 
-
-`strategies` are tried in order. `filesystem` is another name for `file`. A list that is only `redis` raises `Agent::Lock::RedisUnavailableError` (a `RuntimeError`) at construction when that URL does not answer.
+#### Threads, lifetime and session names
 
 A facade is frozen and builds a fresh `Manager` per call, so one instance can be shared by any number of threads. `Agent::Lock.local` and `Agent::Lock.distributed` are memoized separately, built once even when several threads ask at the same time, and a `distributed` that failed to connect is retried on the next call. `Facade.new` and `Agent::Lock.facade` each build a fresh facade and leave those two in place. Two facades pointed at two Redis URLs keep separate locks. The checkout's backend marker binds a facade as it binds `alock`: a facade claims a new checkout for its backend, and raises `Agent::Lock::Store::Mismatch` in one already claimed for the other, so a facade and the CLI never split one checkout across the file store and Redis. The marker names the backend, not the Redis URL: a facade given another `redis_url` than the CLI's `REDIS_URL` is still a separate locker.
 
@@ -232,7 +248,156 @@ locks.acquire("lib/billing/**", "building")                   # held by plan-003
 locks.acquire("lib/billing/a.rb", agent_id: "luke-backend")  # its parent is plan-003.00
 ```
 
+#### Method reference
+
 Every lock method takes `dir:`, `agent_id:`, `parent_id:`, `stale_minutes:` and `session_name:`, overriding the facade's defaults for that call; any other keyword raises `ArgumentError`, through `#async` too. `check`, `list`, `mine`, `release`, `release_all`, `resume`, `whoami`, `skills_path`, `skills_install` and `version` take the same arguments as the command. `show_repos` and `show_repo` read Redis only (`redis_url:` names which one) and return the rows the CLI prints. `break` is `break_lock` (it returns the result; the command succeeded). `acquire` takes `enforce:` and `allow_wide:`. `skills_install` takes `into:`, `agent:` (the `--for` flag) and `overwrite:`. `whoami` returns the `Identity` the lock would be signed with.
+
+## A Ruby dispatcher and its `alock` agents
+
+A dispatcher is a long-lived Ruby process that starts coding agents over a checkout: [OpenLanes](https://github.com/kigster/openlanes) is one. The dispatcher can call Ruby, so it locks through the [Ruby API](#ruby-api), in-process. The agents it starts are `claude` or `codex` processes that can only run commands, so they lock with `alock`. Both write the same lock documents to the same store, so the two halves are one locker.
+
+```mermaid
+flowchart TB
+    subgraph DISP["Dispatcher: one Ruby process"]
+        FACADE["Agent::Lock.distributed(redis_url: url)<br/>agent_id: dispatcher, parent_id: false"]
+    end
+
+    DISP -->|"starts each agent with"| ENV["AGENT_LOCK_REDIS_URL = url<br/>AGENT_PARENT_ID = dispatcher<br/>AGENT_ID = the agent's own name"]
+
+    ENV --> A1["Agent luke-backend<br/>alock acquire lib/billing/tax.rb"]
+    ENV --> A2["Agent rey-frontend<br/>alock acquire app/views/**"]
+
+    FACADE -->|"claims the plan's area"| STORE[("Redis<br/>alock-v4-&lt;owner&gt;/&lt;repo&gt;")]
+    A1 -->|"claims its files inside it"| STORE
+    A2 -->|"claims its files inside it"| STORE
+```
+
+### What has to match
+
+A lock taken by one side blocks the other only when all three of these agree. Each one fails silently when it does not: both sides are told they hold the scope.
+
+| Must match | The dispatcher, in Ruby | An agent, with `alock` | When it does not |
+| :--------- | :---------------------- | :--------------------- | :--------------- |
+| The store  | `Agent::Lock.distributed(redis_url: url)` | `AGENT_LOCK_REDIS_URL=url` in its environment, or `-u url` on every call | Two stores that never see each other's locks. Naming the file store in a tree marked for Redis exits 2 |
+| The tree   | `dir:` on every call: the checkout or worktree the agent writes in | The agent's working directory, or `--dir` | Locks collide only within one repository and branch, so a claim made from another worktree guards nothing here |
+| The family | `agent_id: "dispatcher"`, `parent_id: false` | `AGENT_PARENT_ID=dispatcher`, and its own `AGENT_ID` | The agent is a stranger to the dispatcher, and is refused everywhere inside the dispatcher's claim |
+
+`AGENT_LOCK_REDIS_URL` is the form made for this. Exported once to the agent, it reaches every fresh shell the agent runs a command in and every sub-agent it starts, it keeps a URL with a password out of prompts and transcripts, and it leaves `REDIS_URL` to the project being worked on. It has no fallback: if that Redis does not answer, `alock` exits 2 and never drops to the file store, where the dispatcher would not be looking.
+
+### The dispatcher's side
+
+```ruby
+require "agent/lock"
+
+url   = "redis://locks.internal:6379/0"
+locks = Agent::Lock.distributed(redis_url: url)   # one facade per URL, built once, thread-safe
+me    = { agent_id: "dispatcher", parent_id: false }
+
+# Claim the area a plan may touch, in the checkout its agent will write in.
+locks.acquire("lib/billing/**", "plan 003.00: build", dir: worktree, **me)
+
+# Start the agent in that checkout, with the store and the family in its environment.
+pid = Process.spawn(
+  { "AGENT_LOCK_REDIS_URL" => url, "AGENT_PARENT_ID" => "dispatcher", "AGENT_ID" => "luke-backend" },
+  "claude", "-p", prompt, chdir: worktree
+)
+Process.wait(pid)
+
+locks.release_all(dir: worktree, **me)             # the dispatcher's locks, and what its agents left behind
+```
+
+- **`parent_id: false` is not optional.** A holder that names itself is otherwise taken for a child of whatever terminal or agent started the process, and a lock that session holds would not block the dispatcher. `false` makes it nobody's child, however it was launched.
+- **Pass `dir:` on every call.** A dispatcher's own working directory is rarely the checkout its agents write in.
+- **A refusal is `Agent::Lock::Refused`**, and a Redis that does not answer is `Agent::Lock::RedisUnavailableError`. A facade that failed to connect is not kept, so the next call asks Redis again.
+- **The lock is tied to the dispatcher's process** (`holder: :process`, the default). To keep a claim across a dispatcher restart, name the session instead: see [session names](#threads-lifetime-and-session-names).
+
+### An agent's side
+
+The agent needs nothing but the skill (see [Teach your agents](#teach-your-agents)): the store and its parent are already in its environment. This is what it sees while the dispatcher holds `lib/billing/**`:
+
+```bash
+$ alock whoami
+id:     luke-backend  (from AGENT_ID)
+parent: dispatcher  (from AGENT_PARENT_ID)
+
+$ alock acquire lib/billing/tax.rb "tax rounding"       # inside its parent's claim
+ACQUIRED lib/billing/tax.rb  (holder: luke-backend)
+
+$ alock acquire "lib/billing/**"                        # exactly its parent's claim
+REFUSED: lib/billing/** is your parent's (dispatcher) whole claim; claim a narrower scope inside it
+
+$ AGENT_ID=rey-frontend alock acquire lib/billing/tax.rb   # another agent of the same dispatcher
+REFUSED, do not write here
+HELD  lib/billing/tax.rb  by luke-backend  since 2026-11-27T19:14:05Z
+      intent: tax rounding
+```
+
+An agent that was not started by this dispatcher, or a person in a terminal, is refused by both locks and shown both holders.
+
+A family is two levels deep: a holder may claim inside its parent's lock, and nobody may claim inside a grandparent's. So an agent that fans out to sub-agents of its own does not make itself their parent, since they would then be strangers to the dispatcher and refused everywhere in its claim. They keep the inherited `AGENT_PARENT_ID` and each takes a name of its own, which makes them the dispatcher's children too:
+
+```bash
+AGENT_ID=luke-tax alock acquire lib/billing/tax.rb "rounding"   # parent: dispatcher, inherited
+```
+
+They are then siblings of the agent that started them, so that agent releases, or never claims, what it hands to a sub-agent, and its `release-all` does not release their locks. The dispatcher's `release_all` does.
+
+### How one claim is decided
+
+Both sides run the same check, under the store's mutex, against every live lock that overlaps the scope asked for:
+
+```mermaid
+flowchart TB
+    ASK["Holder H asks for scope S"] --> OVER{"Does a live lock<br/>overlap S?"}
+    OVER -->|no| GRANT["ACQUIRED"]
+    OVER -->|yes| WHO{"Who holds it?"}
+    WHO -->|"H itself"| MINE["ALREADY YOURS"]
+    WHO -->|"H's parent"| SAME{"Is it exactly S?"}
+    SAME -->|"no, S is inside it"| GRANT
+    SAME -->|yes| NARROW["REFUSED<br/>claim a narrower scope"]
+    WHO -->|"a child of H, a sibling,<br/>or a stranger"| HELD["REFUSED<br/>HELD by that holder"]
+```
+
+One refusing lock is enough. An interrupted lock at exactly `S` is neither granted nor refused: it is `INTERRUPTED WORK`, to `resume` or `break`.
+
+### One plan, start to finish
+
+```mermaid
+sequenceDiagram
+    participant D as Dispatcher (Ruby API)
+    participant S as Redis
+    participant A as luke-backend (alock)
+    participant B as rey-frontend (alock)
+
+    D->>S: acquire lib/billing/** (parent_id: false)
+    S-->>D: :acquired
+    D->>A: start, with the store and AGENT_PARENT_ID
+    D->>B: start, with the store and AGENT_PARENT_ID
+    A->>S: alock acquire lib/billing/tax.rb
+    S-->>A: ACQUIRED (inside its parent's claim)
+    B->>S: alock acquire lib/billing/tax.rb
+    S-->>B: REFUSED, HELD by luke-backend
+    A->>S: alock note lib/billing/tax.rb "rounding done"
+    A->>S: alock release-all
+    S-->>A: its own locks, never the dispatcher's
+    A-->>D: exits
+    D->>S: release_all
+    S-->>D: its locks, and any its agents left
+```
+
+### Who ends which lock
+
+| Event | The dispatcher's lock | An agent's lock |
+| :---- | :-------------------- | :-------------- |
+| The agent runs `alock release-all` | Stays | Released |
+| The dispatcher calls `release(scope)` | That one is released | Stays, even inside the released scope |
+| The dispatcher calls `release_all` | Released | Released too: they are its children |
+| The agent's process exits without releasing | Stays | Reaped by the next command on that machine; with notes it becomes interrupted work |
+| The dispatcher's process exits or crashes | Reaped the same way; `resume` takes back one that had notes | Stays until the agent releases it or exits |
+| Either holder is on another machine and goes quiet | Trusted until untouched for `AGENT_LOCK_STALE_MINUTES` | The same |
+| Redis stops answering | `RedisUnavailableError`; nothing is claimed | `alock` exits 2; nothing is claimed, and nothing falls back to disk |
+
+A lock taken with `alock` is tied to the first ancestor of the command that is not a shell, which for a launched agent is its own `claude` or `codex` process. That is why an agent's locks end with the agent and not with each command.
 
 ## How it works
 
@@ -243,8 +408,9 @@ In order of preference:
 | Source              | When it applies                                         |
 | :------------------ | :------------------------------------------------------ |
 | `AGENT_ID`          | A human or a harness named this session on purpose      |
+| `session_name:`     | Ruby API only: the host named its session, see [Ruby API](#threads-lifetime-and-session-names) |
 | `CLAUDE_SESSION_ID` | A harness that exports it, since it survives `--resume` |
-| Fingerprint         | Neither of the above is set                             |
+| Fingerprint         | None of the above is set                                |
 
 The fingerprint walks up from the current process until it finds an ancestor that is not a shell. That is the `claude` or `codex` process driving the session, or the terminal a person is typing in. Its pid, start time, uid and hostname are hashed into a name like `claude-1f4c8a02`, which stays the same for as long as the session lives and differs from anybody else's.
 
@@ -449,6 +615,21 @@ AGENT_LOCK_BACKEND=redis alock acquire workflow/**   # force it, rather than aut
 AGENT_LOCK_BACKEND=file  alock acquire workflow/**   # or force the file store instead
 ```
 
+For `alock`, the store is settled in this order. A Ruby facade tries its `strategies:` in order instead, and is bound by the same marker:
+
+```mermaid
+flowchart TB
+    CMD["alock command"] --> NAMED{"Is a store named?<br/>-s, -u, AGENT_LOCK_REDIS_URL<br/>or AGENT_LOCK_BACKEND"}
+    NAMED -->|yes| AGREE{"Does the tree's marker<br/>name another store?"}
+    AGREE -->|yes| MISMATCH["exit 2: mismatch"]
+    AGREE -->|"no, or no marker yet"| USE["Use the named store.<br/>A named Redis must answer, or exit 2"]
+    NAMED -->|no| MARK{"Does the tree<br/>have a marker?"}
+    MARK -->|yes| BOUND["Use the marker's store"]
+    MARK -->|no| PROBE{"Does a Redis answer?<br/>REDIS_URL, then 127.0.0.1:6379"}
+    PROBE -->|yes| REDIS["Redis, and the marker says so"]
+    PROBE -->|no| FILE["File store, and the marker says so"]
+```
+
 The same choice can be made per call, which is how an agent started by a dispatcher lands in the dispatcher's store whatever its own shell exports:
 
 ```bash
@@ -459,7 +640,7 @@ alock release workflow/** --redis-url redis://locks.internal:6379  # every later
 ```
 
 - A flag wins over `AGENT_LOCK_BACKEND`. Neither wins over the tree's marker: naming the store the tree does not use exits 2.
-- `--redis-url` has no fallback. If nothing answers there, or it is empty or not a Redis URL, the command exits 2 and a virgin tree is left unclaimed. A password in it is never printed back.
+- `--redis-url` has no fallback. If nothing answers there, or it is empty or not a Redis URL, the command exits 2 and a virgin tree is left unclaimed. A password in it is never printed back. The flag itself is still visible in `ps` on that host, so a URL with a password belongs in `AGENT_LOCK_REDIS_URL`, not in `-u`.
 - `AGENT_LOCK_REDIS_URL` means the same as `--redis-url` on every call, and the flag wins over it. It is the form for a dispatcher: exported to the agents it starts, it reaches their sub-agents and every fresh shell, keeps a URL with a password out of prompts and transcripts, and leaves `REDIS_URL` to the project being worked on. The Ruby facade reads it before `REDIS_URL` too.
 - The marker records `redis`, not which Redis. Every agent in the tree has to be given the same URL, by the flag or by `REDIS_URL`; two URLs are two stores that cannot see each other's locks.
 - A Redis URL, from the flag or the variable, beside the file store (`--locking-strategy filesystem` or `AGENT_LOCK_BACKEND=file`) exits 2.
@@ -493,7 +674,7 @@ Before 3.1.0 a lock was named after the checkout's absolute path. A shared Redis
 Where the guarantees stop:
 
 - **It is advisory.** A lock protects a file only from agents that check. `--enforce` freezes files on the local machine only.
-- **Every host has to reach the same Redis.** If the shared `REDIS_URL` does not answer, a command falls back to `redis://127.0.0.1:6379/0`, and that host is then working in a different store from the others without being told. When agents on several machines depend on the lock, keep the shared Redis up and check that `alock list` names it on each one.
+- **Every host has to reach the same Redis.** If the shared `REDIS_URL` does not answer, a command falls back to `redis://127.0.0.1:6379/0`, and that host is then working in a different store from the others without being told. When agents on several machines depend on the lock, name the Redis with `AGENT_LOCK_REDIS_URL` or `--redis-url` instead, which has no fallback and exits 2 when that Redis does not answer, or keep the shared Redis up and check that `alock list` names it on each one.
 - **It is one Redis, not a quorum.** Lock state lives on a single instance. A failover to a replica that has not received the latest writes can lose recent claims, so this is not Redlock, and it is not meant to guard anything stronger than agents editing files.
 - **The mutex lease is not renewed.** A critical section that outlives its 10-second lease fails with an error rather than continuing unprotected, so a slow claim costs a retry, not a double grant.
 
@@ -521,6 +702,21 @@ alock acquire "config/credentials/**" "keys must not move during the migration" 
 > This is opt-in for three reasons. It's macOS-only, since the Linux equivalent (`chattr +i`) requires root. It denies the holder too, so it suits a freeze rather than a file you are editing. And a session that dies leaves the files frozen, at which point `git checkout` and `rm -rf` start failing with "Operation not permitted".
 >
 > Every frozen path is written into the lock, so `release` and `break` thaw them without needing the process that froze them to still exist.
+
+## Upgrading to 4.0.0
+
+What changes for a caller coming from 3.1.0:
+
+| Before | In 4.0.0 |
+| :----- | :------- |
+| `alock acquire --enforce --force` | `--allow-wide` |
+| `alock skills install --force` or `-f` | `--overwrite` |
+| `alock skills install -o DIR` | `--into DIR`; `-o` is gone |
+| `AGENT_PARENT_ID` set and empty was ignored | It means "no parent". `alock whoami` says so when that is why |
+| `Manager#acquire(force:)`, `Skill#install(force:)` | `wide:`, `overwrite:` |
+| `alock` printed nothing and exited 0 on an unexpected error | `ERROR: alock: ...` and exit 2 |
+
+New in 4.0.0: the [Ruby API](#ruby-api), `--locking-strategy` and `--redis-url`, `AGENT_LOCK_REDIS_URL`, session names, and a holder that declares it has no parent. `CHANGELOG.md` has the full list.
 
 ## Development
 
