@@ -11,13 +11,16 @@ Gem::Specification.new do |spec|
   spec.summary = "Advisory file and directory locks for AI coding agents sharing a checkout or a branch."
 
   spec.description = "agent-lock installs `alock`, a CLI that coding agents (Claude Code, Codex, Cursor, " \
-                     "sub-agents of one session, or agents on several machines) run before they write: " \
+                     "sub-agents of one session, or agents on several machines) can run before they write: " \
                      "`alock acquire <glob> <intent>` claims a path, and any overlapping claim is refused " \
                      "with who holds it, since when, and why. Locks are Markdown documents kept in Redis " \
                      "(shared across machines) or in a file store inside .git, keyed by repository and " \
                      "branch. Identity comes from the agent session, crashed holders are reaped or " \
                      "orphaned with their notes, and macOS can freeze files outright with --enforce. " \
-                     "Used by OpenLanes to keep concurrent agents from overwriting each other."
+                     "Used by OpenLanes to keep concurrent agents from overwriting each other. Since 4.0 " \
+                     "every command is also a Ruby method on Agent::Lock::Facade, with a block form of " \
+                     "acquire that releases afterwards, and an opt-in async mode that returns futures " \
+                     "(it needs the concurrent-ruby gem)."
 
   spec.homepage = "https://github.com/kigster/agent-lock"
   spec.license = "MIT"
@@ -26,6 +29,7 @@ Gem::Specification.new do |spec|
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = "https://github.com/kigster/agent-lock"
   spec.metadata["changelog_uri"] = "https://github.com/kigster/agent-lock/blob/main/CHANGELOG.md"
+  spec.metadata["documentation_uri"] = "https://kigster.github.io/agent-lock/"
 
   spec.metadata["rubygems_mfa_required"] = "true"
 

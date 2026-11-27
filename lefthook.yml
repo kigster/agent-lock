@@ -1,0 +1,33 @@
+pre-commit:
+  parallel: true
+  jobs:
+    # One after the other: rubocop rewrites the staged Ruby files, and the
+    # specs should run against what is actually being committed.
+    - name: ruby
+      group:
+        piped: true
+        jobs:
+          - name: rubocop
+            glob: "**/*.{rb,rake,gemspec}"
+            # RuboCop honours AllCops/Exclude when it walks the tree itself,
+            # but ignores it for paths passed on the command line, which is
+            # what {staged_files} does. --force-exclusion restores it.
+            run: bundle exec rubocop -a --force-exclusion --format progress {staged_files}
+            stage_fixed: true
+
+          # Only the spec files in this commit; the whole suite belongs to
+          # `just test` and to CI.
+          - name: rspec
+            glob: "spec/**/*_spec.rb"
+            run: bundle exec rspec --format progress {staged_files}
+
+    - name: gitleaks
+      # Scans only staged changes; a non-zero exit blocks the commit. Fails
+      # closed when gitleaks is missing, because the scan is mandatory.
+      run: |
+        if ! command -v gitleaks >/dev/null 2>&1; then
+          echo "gitleaks is not installed; secret scanning is required before committing."
+          echo "Install it:  brew install gitleaks"
+          exit 1
+        fi
+        gitleaks git --pre-commit --redact --staged --no-banner --

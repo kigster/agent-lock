@@ -1,36 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [4.0.0] - 2026-11-26
 
 ### Added
 
-- `holder:` on `Facade.new` and `Agent::Lock.facade`. `:process`, the default, ties a lock's liveness to the Ruby process holding the facade; `:session` keeps `alock`'s first-non-shell-ancestor rule.
-
-### Changed
-
-- A facade's locks are tied to its own process by default. Before, liveness was checked against the host's first non-shell ancestor, which outlives a crashed host, so its locks were never reaped.
-
-### Fixed
-
-- Concurrent `note` calls on one lock no longer lose notes: `note`, `release`, `break`, `release-all` and the reaping before `check`, `list` and `mine` now run inside the store mutex, as `acquire` and `resume` already did.
-- A backend marker that exists but cannot be read raises `Store::Mismatch` naming the read error, instead of being reported as empty.
-
-## [4.1.0] - 2026-11-25
-
-### Added
-
-- `Agent::Lock::Facade`: every command as a Ruby method, run in-process. `Agent::Lock.local` (file store), `Agent::Lock.distributed` (Redis, or `RedisUnavailableError`) and `Agent::Lock.facade` (Redis, else the file store). Thread-safe. See `README.md#from-ruby`.
+- `Agent::Lock::Facade`: every command as a Ruby method, run in-process. `Agent::Lock.local` (file store), `Agent::Lock.distributed` (Redis, or `RedisUnavailableError`) and `Agent::Lock.facade` (Redis, else the file store). Thread-safe. See `README.md#ruby-api`.
 - `Agent::Lock::Refused` and `Agent::Lock::RedisUnavailableError`.
-
-### Fixed
-
-- The file store no longer raises `Errno::ENOENT` when several threads in one process rewrite the same lock (reaping, noting): each write gets its own temp file instead of one per process.
-- A facade is bound by the checkout's backend marker like `alock`: it claims a new checkout for its backend and raises `Store::Mismatch` in one claimed for the other, so a facade and the CLI never take one scope in two stores.
-- The backend marker is written to a temp file and hard-linked into place, so a process that loses the race for a new checkout never reads it empty. A marker that stays empty raises `Store::Mismatch` instead of letting each caller pick its own backend.
-- A facade's Redis client uses the gem's default timeouts; the 0.2s timeout applies only to the connection probe.
-- A fingerprint identity no longer contains spaces when the session's process has retitled itself (macOS reports a Claude Code background job as `claude bg-spare`). Only the first word is kept, so the holder id changes for such sessions.
-
-## [4.0.0] - 2026-11-24
+- `Facade#acquire` takes a block: it yields the result, returns the block's value, and releases afterwards, even when the block raises, `break`s or `throw`s. Only a lock this call took is released, so a nested block on a scope you already hold keeps the outer lock. A refused release does not replace the block's own exception.
+- `Facade.new(async: true)` and `Agent::Lock.facade(async: true)` add `#async`, which runs any lock method on concurrent-ruby's I/O pool and returns a `Concurrent::Promises::Future`. Arguments, keywords and blocks pass through as on a direct call. One facade's async calls run one at a time, in the order they were made. concurrent-ruby is not a direct dependency (`dry-cli-ui` currently installs it): add it to your Gemfile to rely on this; if it is missing, `async: true` raises `LoadError` naming the gem.
+- `holder:` on `Facade.new` and `Agent::Lock.facade`. `:process`, the default, ties a lock's liveness to the Ruby process holding the facade, so a host that crashes has its locks reaped; `:session` keeps `alock`'s first-non-shell-ancestor rule. Only liveness changes: the holder id and the inferred parent still come from the session, so a script an agent runs is the same holder as that agent's `alock`.
+- `alock -h` opens with a boxed title and the version, and links to the README's Ruby API section.
+- A lefthook pre-commit config (rubocop, the staged specs, gitleaks) and a gitleaks config.
 
 ### Changed
 
@@ -41,6 +21,19 @@
 - `alock completion --help` shows each install example once; the zsh one no longer names `_alo`.
 - `rake doc` builds the YARD site from `.yardopts` into the git-ignored `doc/` and opens `doc/index.html`. Every class, method, constant and attribute is documented.
 - The gemspec and README no longer describe the gem as part of agentilda.
+- **Breaking (Ruby):** `Manager#acquire(force:)` is now `wide:`, and `Skill#install(force:)` is now `overwrite:`, matching the CLI flags.
+- The coverage badge in `docs/badges/` is rewritten only under `COVERAGE=true` (`just test-coverage`), so a plain `rspec` run leaves the checkout clean.
+
+### Fixed
+
+- Concurrent `note` calls on one lock no longer lose notes: `note`, `release`, `break`, `release-all`, `Manager#reap` and the reaping before `check`, `list` and `mine` now run inside the store mutex, as `acquire` and `resume` already did.
+- `acquire --enforce` no longer overwrites the lock with the record it read before freezing. The write-back re-reads the lock under the store mutex, so a note written during the freeze is kept, a lock broken during the freeze stays broken, and another agent's lock taken in that window is neither replaced nor, on a freeze refused as too broad, deleted. A claim lost during the freeze is answered as `:held`, with the files thawed.
+- A backend marker that exists but cannot be read raises `Store::Mismatch` naming the read error, instead of being reported as empty.
+- The file store no longer raises `Errno::ENOENT` when several threads in one process rewrite the same lock (reaping, noting): each write gets its own temp file instead of one per process.
+- A facade is bound by the checkout's backend marker like `alock`: it claims a new checkout for its backend and raises `Store::Mismatch` in one claimed for the other, so a facade and the CLI never take one scope in two stores.
+- The backend marker is written to a temp file and hard-linked into place, so a process that loses the race for a new checkout never reads it empty. A marker that stays empty raises `Store::Mismatch` instead of letting each caller pick its own backend.
+- A facade's Redis client uses the gem's default timeouts; the 0.2s timeout applies only to the connection probe.
+- A fingerprint identity no longer contains spaces when the session's process has retitled itself (macOS reports a Claude Code background job as `claude bg-spare`). Only the first word is kept, so the holder id changes for such sessions. Before upgrading, release the locks such a session holds (`alock release-all`), or clear them afterwards with `alock break <path>`: the new id does not match the old one, so they read as another agent's.
 
 ### Removed
 

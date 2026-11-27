@@ -68,6 +68,16 @@ RSpec.describe Agent::Lock::Freeze, type: :checkout do
       expect { luke.acquire("workflow/**", enforce: true) }
         .to raise_error(described_class::TooBroad, /wider than a freeze should be/)
     end
+
+    it "freezes past the limit when the caller allowed it wide" do
+      stub_const("#{described_class}::LIMIT", 1)
+      allow(described_class).to receive(:run).and_return(true)
+      File.write(File.join(checkout, "workflow", "lib", "other.rb"), "# stub\n")
+
+      result = luke.acquire("workflow/**", enforce: true, wide: true)
+
+      expect(result.record.frozen_paths).to contain_exactly("workflow/lib/cli.rb", "workflow/lib/other.rb")
+    end
   end
 
   def suppress(error)

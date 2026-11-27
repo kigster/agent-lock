@@ -17,33 +17,62 @@ module Agent
       # line, so guessing it wrong is not a cosmetic mistake.
       PROGRAM_NAME = "alock"
 
+      # Colours the help text. Pastel honours NO_COLOR and a non-terminal
+      # stdout, so piped help and the specs read plain text.
+      COLORS = Pastel.new
+
+      # The name in the left cell of the help's title box.
+      TITLE = "    Agent/Lock — Distributed Advisory Locker"
+
+      # Inner widths of the title box's two cells. The version is padded to
+      # the right one rather than spaced by hand, so 4.10.0 still closes the box.
+      TITLE_CELLS = [45, 33].freeze
+
+      # The three lines `alock -h` opens with: the gem's name and its version, boxed.
+      #
+      # @param version [String]
+      # @return [String]
+      def self.title_box(version = Agent::Lock::VERSION)
+        left, right = TITLE_CELLS
+        rule = ->(open, middle, close) { "#{open}#{"━" * left}#{middle}#{"━" * right}#{close}" }
+        name = COLORS.yellow(TITLE.ljust(left))
+        release = COLORS.green.bold(" Version #{version}".ljust(right))
+
+        [rule.call("┏", "┳", "┓"), "┃#{name}┃#{release}┃", rule.call("┗", "┻", "┛")].join("\n")
+      end
       # The column dry-cli-help wraps at, rather than the terminal's width,
       # so help reads the same in a wide terminal, a narrow one, and a log.
       HELP_WIDTH = 85
 
       # What `alock -h` says before it lists the commands.
-      DESCRIPTION = <<~TEXT
+      DESCRIPTION = <<~TEXT.freeze
         Advisory locks for AI coding agents that share a checkout, or a branch
-        across machines. Claim the file, directory or glob you are about to write
-        with `acquire`; any other agent that claims or checks an overlapping scope
-        is refused and told who holds it, since when, and why. Locks are advisory:
-        they protect only from agents that check.
+        across worktrees and optionally across machines. Claim the file, directory
+        or glob you are about to write to with `acquire`; any other agent that claims
+        or checks an overlapping scope is refused and told who holds it, since when,
+        and why. Locks are advisory only: #{COLORS.blue("they protect agents from working on the same files as other agents that also check for locks")}.
 
         Sub-agents of one session share its process, so each must name itself on
-        every call: AGENT_ID=<name> alock acquire ... Run `alock whoami` to see the
+        every call: #{COLORS.blue("AGENT_ID=<name> alock acquire ...")} Run `alock whoami` to see the
         name your locks would carry.
 
-        Backends: Redis when one answers on REDIS_URL or localhost:6379 (shared
-        across machines), otherwise a file store inside .git. The first process in
-        a checkout records the choice; AGENT_LOCK_BACKEND=redis|file overrides it.
+        Backends: Redis when one answers on env REDIS_URL (shared across machines),
+        or localhost:6379 (local only). Otherwise a file store inside .git (also
+        local only). The first process in a checkout records the choice; setting environment
+        variable #{COLORS.blue("AGENT_LOCK_BACKEND=redis|file")} overrides it.
 
         Exit codes: 0 done, 1 refused or held by someone else, 2 could not run.
+
+        If you are using the gem from a Ruby application, you should default to the Ruby
+        API. Every CLI command is available via Ruby API, as described in the README:
+        #{COLORS.cyan.bold.underline("https://github.com/kigster/agent-lock#ruby-api")}
       TEXT
 
       Dry::CLI::Help.configure do
-        title "Agent Lock, Version #{Agent::Lock::VERSION}"
+        styles { heading :bold, :magenta }
+        title "\n#{CLI.title_box}"
         description DESCRIPTION
-        epilogue "Documentation: https://github.com/kigster/agent-lock"
+        epilogue "Documentation: #{COLORS.cyan.bold.underline("https://github.com/kigster/agent-lock")}"
         width HELP_WIDTH
       end
 
