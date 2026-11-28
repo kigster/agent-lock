@@ -74,6 +74,11 @@ module Agent
         # @return [String] the store by name, its URL without any password
         def describe = "redis #{self.class.safe(url)} (#{namespace})"
 
+        # The default would print `@url` as given, password and all.
+        #
+        # @return [String]
+        def inspect = "#<#{self.class.name} #{describe}>"
+
         # SCAN rather than KEYS: this runs on whatever Redis the machine
         # already has, which may be somebody's shared development instance,
         # and KEYS blocks the server for the length of the scan.
@@ -310,19 +315,30 @@ module Agent
           # A URL fit to print: an error lands in transcripts and logs, and
           # a Redis URL may carry a password. Everything up to the last `@`
           # goes, because a password that was never percent-encoded may hold
-          # a space, a `/` or an `@` of its own.
+          # a space, a `/` or an `@` of its own. Only a `scheme://` in front
+          # is kept: a mistyped `rey:secret@host` has no scheme to trust, and
+          # is the URL most likely to end up in an error.
           #
           # @param url [String] one URL, and nothing else
           # @return [String] `url` with any userinfo replaced by `***`
-          def safe(url) = url.to_s.sub(%r{(?<=://).*@}m, "***@")
+          def safe(url)
+            text = url.to_s
+            at = text.rindex("@")
+            return text unless at
 
-          # The same for a sentence that may quote URLs: the last net under
-          # an error somebody else worded. It cannot tell where an unencoded
-          # password ends, so a URL this gem prints itself goes through {.safe}.
+            "#{text[%r{\A[a-z][a-z0-9+.-]*://}i]}***#{text[at..]}"
+          end
+
+          # The same for a sentence that may quote a URL: the last net under
+          # an error somebody else worded. A sentence does not say where an
+          # unencoded password ends, so everything from the first `://` to
+          # the last `@` goes. That can take a second URL or a few words with
+          # it; a net that keeps the words and lets a password through is
+          # the worse one.
           #
           # @param text [String]
-          # @return [String] `text` with the userinfo of each URL replaced by `***`
-          def scrub(text) = text.to_s.gsub(%r{(?<=://)[^/@\s]*@}, "***@")
+          # @return [String] `text` with no userinfo left in it
+          def scrub(text) = text.to_s.sub(%r{(?<=://).*@}m, "***@")
 
           # @return [String] `v4` from `4.0.3`. Every minor and patch of a
           #   major reads and writes one namespace; a new major starts another.

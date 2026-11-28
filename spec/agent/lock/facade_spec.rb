@@ -63,13 +63,29 @@ RSpec.describe Agent::Lock::Facade, type: :checkout do
     end
 
     it "keeps the password out of the error for a URL that is not a Redis URL" do
-      messages = ["http://rey:s3cretpw@127.0.0.1/15", "redis://rey:s3cret pw@127.0.0.1/15"].map do |url|
+      urls = ["http://rey:s3cretpw@127.0.0.1/15", "redis://rey:s3cret pw@127.0.0.1/15", "rey:s3cretpw@127.0.0.1:1/15"]
+      messages = urls.map do |url|
         described_class.new(strategies: %w[redis], redis_url: url)
       rescue ArgumentError => e
-        e.message
+        e.full_message(highlight: false).lines.first.split(": ", 2).last.strip
       end
 
-      expect(messages).to eq(["not a Redis URL: http://***@127.0.0.1/15", "not a Redis URL: redis://***@127.0.0.1/15"])
+      expect(messages).to eq(["not a Redis URL: http://***@127.0.0.1/15 (ArgumentError) (ArgumentError)",
+                              "not a Redis URL: redis://***@127.0.0.1/15 (URI::InvalidURIError) (ArgumentError)",
+                              "not a Redis URL: ***@127.0.0.1:1/15 (ArgumentError) (ArgumentError)"])
+    end
+
+    it "raises that error with no cause, which would carry the URL into every backtrace" do
+      expect { described_class.new(strategies: %w[redis], redis_url: "redis://rey:s3cret pw@127.0.0.1/15") }
+        .to raise_error(ArgumentError) { |error|
+          expect([error.cause, error.full_message.include?("s3cret")]).to eq([nil, false])
+        }
+    end
+
+    it "does not show the password when inspected" do
+      built = described_class.new(strategies: %w[file redis], redis_url: "redis://rey:s3cretpw@127.0.0.1:1/15")
+
+      expect(built.inspect).to include("redis://***@127.0.0.1:1/15").and(satisfy { |text| !text.include?("s3cretpw") })
     end
 
     it "rejects an unknown strategy" do

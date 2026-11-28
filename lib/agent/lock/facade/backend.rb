@@ -63,6 +63,12 @@ module Agent
           Store::RedisStore.new(tree, client: @client, url: redis_url)
         end
 
+        # The default would print `@redis_url` as given, password and all,
+        # into whatever log or console inspects a facade.
+        #
+        # @return [String]
+        def inspect = "#<#{self.class.name} #{name} #{masked_url}>"
+
         private
 
         # @param names [Array<String>]
@@ -89,21 +95,29 @@ module Agent
         # gem's default timeouts: the probe's 0.2s would otherwise apply to
         # every lock operation on a slow, remote Redis.
         #
-        # redis-rb and URI quote the whole URL, password included, when they
-        # cannot read it, so that error is raised again without it.
-        #
         # @return [::Redis, nil] a working client once Redis answered, or nil
         # @raise [ArgumentError] when the URL is not one redis-rb can read
         def connect
-          probe = ::Redis.new(url: redis_url, timeout: PROBE_TIMEOUT, connect_timeout: PROBE_TIMEOUT)
+          probe = client(timeout: PROBE_TIMEOUT, connect_timeout: PROBE_TIMEOUT)
           probe.ping
-          ::Redis.new(url: redis_url)
+          client
         rescue ::Redis::BaseError, SystemCallError, SocketError
           nil
-        rescue ArgumentError, URI::InvalidURIError
-          raise ArgumentError, "not a Redis URL: #{masked_url}"
         ensure
           close_quietly(probe)
+        end
+
+        # redis-rb and URI quote the whole URL, password included, when they
+        # cannot read it. That error is raised again without the URL, and
+        # without a `cause`, which would carry the original message into
+        # every backtrace and error reporter. Keywords go to `::Redis.new`.
+        #
+        # @return [::Redis]
+        # @raise [ArgumentError] when the URL is not one redis-rb can read
+        def client(**)
+          ::Redis.new(url: redis_url, **)
+        rescue ArgumentError, URI::InvalidURIError => e
+          raise ArgumentError, "not a Redis URL: #{masked_url} (#{e.class})", cause: nil
         end
 
         # @param client [::Redis, nil]
