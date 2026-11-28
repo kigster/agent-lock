@@ -8,7 +8,7 @@
 
 ### Fixed
 
-- A Redis URL's password no longer appears in an error. `RedisUnavailableError` from the facade, the store's mutex timeout, and `Store#describe` now mask the userinfo as `***`, as `alock` already did. The mask now also covers a password that was never percent-encoded and holds a space, a `/` or an `@`, which `alock` printed in full. A URL with no `scheme://` in front (`rey:secret@host`) is masked too, and `inspect` of a facade or a Redis store no longer shows the URL as given. A URL the facade cannot read raises `ArgumentError: not a Redis URL: ...`, masked and with no `cause`, in place of redis-rb's own error, which quoted the whole URL.
+- A Redis URL's password no longer appears in an error. `RedisUnavailableError` from the facade, the store's mutex timeout, and `Store#describe` now mask the userinfo as `***`, as `alock` already did. The mask now also covers a password that was never percent-encoded and holds a space, a `/` or an `@`, which `alock` printed in full. A URL with no `scheme://` in front (`rey:secret@host`) is masked too, and `inspect` of a facade or a Redis store no longer shows the URL as given. `alock` masks any URL in an error it prints, whoever worded the error and whatever the password holds. A URL the facade cannot read raises `ArgumentError: not a Redis URL: ...`, masked and with no `cause`, in place of redis-rb's own error, which quoted the whole URL.
 
 ### Changed
 

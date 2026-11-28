@@ -67,9 +67,17 @@ RSpec.describe Agent::Lock::Store::RedisStore, type: :checkout do
   end
 
   describe ".scrub" do
-    it "masks each URL a sentence quotes, and leaves the sentence" do
-      expect(described_class.scrub("tried redis://a:b@h1/0 or redis://c:d@h2/1: refused"))
-        .to eq("tried redis://***@h1/0 or redis://***@h2/1: refused")
+    it "masks the URL a sentence quotes, and leaves the rest of the sentence" do
+      expect(described_class.scrub("cannot use redis://a:b@h1/0: no")).to eq("cannot use redis://***@h1/0: no")
+    end
+
+    it "masks a password that holds a space, a slash or an @, which a sentence gives no end to" do
+      expect(described_class.scrub('bad URI (is not URI?): "redis://rey:s3 c/r@et@h1/0"'))
+        .to eq('bad URI (is not URI?): "redis://***@h1/0"')
+    end
+
+    it "lets no password through when a sentence quotes two URLs" do
+      expect(described_class.scrub("tried redis://a:s3cret@h1/0 or redis://c:s3 cret@h2/1")).not_to include("s3")
     end
   end
 

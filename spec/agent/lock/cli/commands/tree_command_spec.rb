@@ -108,6 +108,16 @@ RSpec.describe Agent::Lock::CLI::Commands::TreeCommand do
       end
     end
 
+    it "never prints a password quoted by an error this gem did not word" do
+      [RuntimeError, Agent::Lock::Error].each do |error|
+        allow(Agent::Lock::Store).to receive(:for).and_raise(error, 'bad URI: "redis://rey:s3cret pw@127.0.0.1:1/15"')
+
+        command = agent_lock("list")
+
+        expect(command.output).to include("redis://***@127.0.0.1:1/15").and(satisfy { |text| !text.include?("s3cret") })
+      end
+    end
+
     it "never prints the password of the URL it could not use" do
       command = agent_lock("acquire workflow -u redis://rey:s3cretpw@127.0.0.1:1/15")
 

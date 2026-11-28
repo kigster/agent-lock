@@ -329,13 +329,16 @@ module Agent
             "#{text[%r{\A[a-z][a-z0-9+.-]*://}i]}***#{text[at..]}"
           end
 
-          # The same for a sentence that may quote URLs: the last net under
-          # an error somebody else worded. It cannot tell where an unencoded
-          # password ends, so a URL this gem prints itself goes through {.safe}.
+          # The same for a sentence that may quote a URL: the last net under
+          # an error somebody else worded. A sentence does not say where an
+          # unencoded password ends, so everything from the first `://` to
+          # the last `@` goes. That can take a second URL or a few words with
+          # it; a net that keeps the words and lets a password through is
+          # the worse one.
           #
           # @param text [String]
-          # @return [String] `text` with the userinfo of each URL replaced by `***`
-          def scrub(text) = text.to_s.gsub(%r{(?<=://)[^/@\s]*@}, "***@")
+          # @return [String] `text` with no userinfo left in it
+          def scrub(text) = text.to_s.sub(%r{(?<=://).*@}m, "***@")
 
           # @return [String] `v4` from `4.0.3`. Every minor and patch of a
           #   major reads and writes one namespace; a new major starts another.

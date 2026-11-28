@@ -83,7 +83,7 @@ module Agent
         # keeps that from taking the whole test process down with it.
         code = e.status
       rescue Dry::CLI::Error, Error => e
-        stderr.puts(bold(red("ERROR: #{program}: #{e.message}")))
+        stderr.puts(bold(red("ERROR: #{program}: #{Store::RedisStore.scrub(e.message)}")))
         code = 2
       rescue StandardError => e
         # Anything else used to fall through to the `ensure` with `code`
