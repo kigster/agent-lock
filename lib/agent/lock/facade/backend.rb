@@ -63,6 +63,12 @@ module Agent
           Store::RedisStore.new(tree, client: @client, url: redis_url)
         end
 
+        # The default would print `@redis_url` as given, password and all,
+        # into whatever log or console inspects a facade.
+        #
+        # @return [String]
+        def inspect = "#<#{self.class.name} #{name} #{masked_url}>"
+
         private
 
         # @param names [Array<String>]
@@ -84,16 +90,6 @@ module Agent
         #
         # @return [String] the URL with any userinfo replaced by `***`
         def masked_url = Store::RedisStore.safe(redis_url)
-
-        public
-
-        # The default would print `@redis_url` as given, password and all,
-        # into whatever log or console inspects a facade.
-        #
-        # @return [String]
-        def inspect = "#<#{self.class.name} #{name} #{masked_url}>"
-
-        private
 
         # Probes with a short-timeout client, then hands back one with the
         # gem's default timeouts: the probe's 0.2s would otherwise apply to
